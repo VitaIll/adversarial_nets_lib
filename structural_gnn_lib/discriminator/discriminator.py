@@ -1,5 +1,3 @@
-# structural_gnn_lib/discriminator/discriminator.py
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -27,10 +25,7 @@ class GraphDiscriminator(torch.nn.Module):
         """
         super(GraphDiscriminator, self).__init__()
         
-        # Single GNN layer
         self.conv = GCNConv(input_dim, hidden_dim)
-        
-        # Simple linear classifier (no hidden layers to minimize parameters)
         self.classifier = nn.Linear(hidden_dim, num_classes)
         
    
@@ -50,16 +45,10 @@ class GraphDiscriminator(torch.nn.Module):
         """
         x, edge_index, batch = data.x, data.edge_index, data.batch
         
-        # Single graph convolution with ReLU activation
         x = F.relu(self.conv(x, edge_index))
-        
-        # Light dropout for regularization
         x = F.dropout(x, p=0.2, training=self.training)
-        
-        # Global pooling to get graph-level representation
         x = global_mean_pool(x, batch)
-        
-        # Direct classification (no hidden layers)
+
         logits = self.classifier(x)
         
         return logits

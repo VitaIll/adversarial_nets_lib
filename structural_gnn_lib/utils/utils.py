@@ -1,10 +1,6 @@
-# structural_gnn_lib/utils/utils.py
-
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch_geometric.data import DataLoader
-import numpy as np
+from torch_geometric.loader import DataLoader 
 import random
 from sklearn.model_selection import train_test_split
 
@@ -69,7 +65,7 @@ def evaluate_discriminator(model, loader, device):
     return accuracy
 
 
-def objective_function(theta, ground_truth_generator, m, num_epochs=10, verbose=False):
+def objective_function(theta, ground_truth_generator, synthetic_generator, m=500, num_epochs=5, verbose=True):
     """
     Objective function for parameter estimation.
     
@@ -83,6 +79,8 @@ def objective_function(theta, ground_truth_generator, m, num_epochs=10, verbose=
         Candidate parameters theta
     ground_truth_generator : GroundTruthGenerator
         The ground truth generator
+    synthetic_generator : SyntheticGenerator
+        The synthetic generator (reused across calls)
     m : int
         Number of nodes to sample for subgraphs
     num_epochs : int
@@ -95,67 +93,45 @@ def objective_function(theta, ground_truth_generator, m, num_epochs=10, verbose=
     float
         Test accuracy of the discriminator (objective to minimize)
     """
-    from ..generator.generator import SyntheticGenerator, linear_in_means_model
     from ..discriminator.discriminator import GraphDiscriminator
     
-    # Set device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    # Create synthetic generator with linear-in-means model
-    synthetic_generator = SyntheticGenerator(ground_truth_generator, linear_in_means_model)
-    
-    # Generate synthetic outcomes
     synthetic_generator.generate_outcomes(theta)
     
-    # Sample nodes
     n = ground_truth_generator.num_nodes
     sampled_nodes = random.sample(range(n), min(m, n))
     
-    # Generate subgraphs
     real_subgraphs = ground_truth_generator.sample_subgraphs(sampled_nodes)
     synthetic_subgraphs = synthetic_generator.sample_subgraphs(sampled_nodes)
     
-    # Create labeled dataset
     dataset = create_dataset(real_subgraphs, synthetic_subgraphs)
     
-    # Train-test split
-    train_data, test_data = train_test_split(dataset, test_size=0.2, random_state=42)
+    train_data, test_data = train_test_split(dataset, test_size=0.3, random_state=42)
+    train_loader = DataLoader(train_data, batch_size=256, shuffle=True)
+    test_loader = DataLoader(test_data, batch_size=256, shuffle=False)
     
-    # Create dataloaders
-    train_loader = DataLoader(train_data, batch_size=32, shuffle=True)
-    test_loader = DataLoader(test_data, batch_size=32, shuffle=False)
-    
-    # Initialize discriminator
-    input_dim = real_subgraphs[0].x.shape[1]  # x and y concatenated
-    hidden_dim = 16  # Small hidden dimension to keep params < 100
+    input_dim = real_subgraphs[0].x.shape[1]  
+    hidden_dim = 16 
     model = GraphDiscriminator(input_dim, hidden_dim).to(device)
     
-    # Setup optimizer and loss
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)  # Higher LR for simpler model
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)  
     criterion = nn.CrossEntropyLoss()
     
-    # Train discriminator
     model.train()
     for epoch in range(num_epochs):
         total_loss = 0
         for batch in train_loader:
             batch = batch.to(device)
-            
-            # Forward pass
             outputs = model(batch)
             loss = criterion(outputs, batch.label)
-            
-            # Backward pass
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            
             total_loss += loss.item()
-        
-        if verbose and epoch % 5 == 0:
+        if verbose:
             print(f"Epoch {epoch}, Loss: {total_loss/len(train_loader):.4f}")
     
-    # Evaluate on test set
     test_accuracy = evaluate_discriminator(model, test_loader, device)
     
     if verbose:
