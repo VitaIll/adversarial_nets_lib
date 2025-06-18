@@ -56,7 +56,7 @@ class AdversarialEstimator:
             self.bounds,
             n_calls=n_calls,
             n_initial_points=int(0.3 * n_calls),
-            noise=0.2,
+            noise=0.1,
             acq_func='EI',
             random_state=42,
             n_jobs=-1,
