@@ -1,5 +1,9 @@
 """Structural GNN Library for Adversarial Estimation on Graphs"""
 
+import warnings
+warnings.filterwarnings("ignore", message="An issue occurred while importing 'torch-sparse'")
+warnings.filterwarnings("ignore", message="An issue occurred while importing 'torch-cluster'")
+
 from .generator.generator import (
     GeneratorBase,
     GroundTruthGenerator,

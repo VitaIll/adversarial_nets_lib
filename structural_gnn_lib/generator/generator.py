@@ -1,3 +1,8 @@
+import warnings
+
+warnings.filterwarnings("ignore", message="An issue occurred while importing 'torch-sparse'")
+warnings.filterwarnings("ignore", message="An issue occurred while importing 'torch-cluster'")
+
 import torch
 import numpy as np
 import networkx as nx
@@ -73,7 +78,7 @@ class GeneratorBase(ABC):
                         original_nodes=nodes,  
                         original_graph=subgraph)  
             subgraphs.append(data)
-            
+
         return subgraphs
 
 

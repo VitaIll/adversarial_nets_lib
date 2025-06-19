@@ -1,3 +1,7 @@
+import warnings
+warnings.filterwarnings("ignore", message="An issue occurred while importing 'torch-sparse'")
+warnings.filterwarnings("ignore", message="An issue occurred while importing 'torch-cluster'")
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -7,7 +11,7 @@ from torch_geometric.nn import GCNConv, global_mean_pool
 class GraphDiscriminator(torch.nn.Module):
     """
     Lightweight Graph Neural Network discriminator for distinguishing real and synthetic graphs.
-    Uses only a single convolutional layer to keep parameters under 100.
+    Uses only a single convolutional layer to keep parameters low.
     """
     
     def __init__(self, input_dim, hidden_dim=16, num_classes=2):
@@ -28,7 +32,6 @@ class GraphDiscriminator(torch.nn.Module):
         self.conv = GCNConv(input_dim, hidden_dim)
         self.classifier = nn.Linear(hidden_dim, num_classes)
         
-   
     def forward(self, data):
         """
         Forward pass through the GNN.
