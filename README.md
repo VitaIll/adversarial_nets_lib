@@ -18,7 +18,7 @@ GNN discriminator $D: g_i \to [0,1]$, $g_i$ is a subgraph sampled from $G$ or $G
 
 We search for $\theta^*$ such that:
 ```math
-  \theta^* \in \arg \min_{\theta} \max_{D} L_D(G'(\theta),G)
+  \theta^* \in \arg \min_{\theta}\max_{D}\mathbb{E}L_D(G'(\theta),G)
 ```
 where the loss $L_D$ is some classification quality metric we want to minimize induced by the optimal classifier $D^*$, evaluated on the test set (e.g. accuracy or negative cross-entropy).
 
