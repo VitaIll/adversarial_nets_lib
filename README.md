@@ -35,4 +35,4 @@ Is a test notebook showcasing the estimation on 2-parameter case where objective
 ## Notes
 - As of now utils are specific to the discriminator use in linear in means experiment, but should be generalized.
 - Architecture of GNN for the experiment is chosen ad hoc since the identification is strong.
-- Linear experiment uses accuracy as a minimization objective, for more complex models more sensitive metrics are necessary.
+- Linear experiment uses accuracy as a minimization objective, for more complex models more sensitive metrics are necessary.a
