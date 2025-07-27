@@ -57,6 +57,7 @@ class AdversarialEstimator:
                 self.synthetic_generator, 
                 m=m,
                 num_epochs=num_epochs,
+                discriminator_factory=self.discriminator_factory,
                 verbose=verbose
             )
         
@@ -75,8 +76,7 @@ class AdversarialEstimator:
         result = gp_minimize(
             objective_with_generator,
             self.bounds,
-            **gp_options,
-            verbose=verbose
+            **gp_options
         )
         
         return result
