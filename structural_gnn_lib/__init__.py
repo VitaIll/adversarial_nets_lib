@@ -7,9 +7,10 @@ warnings.filterwarnings("ignore", message="An issue occurred while importing 'to
 from .generator.generator import (
     GeneratorBase,
     GroundTruthGenerator,
-    SyntheticGenerator,
-    linear_in_means_model
+    SyntheticGenerator
 )
+
+from .data import GraphDataset
 
 from .estimator.estimator import AdversarialEstimator
 from .utils.utils import (
@@ -23,7 +24,6 @@ __all__ = [
     "GeneratorBase",
     "GroundTruthGenerator", 
     "SyntheticGenerator",
-    "linear_in_means_model",
     "AdversarialEstimator",
     "create_dataset",
     "evaluate_discriminator",

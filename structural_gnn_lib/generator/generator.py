@@ -8,8 +8,6 @@ import numpy as np
 import networkx as nx
 from abc import ABC
 from torch_geometric.data import Data
-from numba import njit, prange
-
 
 class GeneratorBase(ABC):
     """Abstract base class for data generators."""
@@ -144,44 +142,3 @@ class SyntheticGenerator(GeneratorBase):
         return self.y
 
 
-
-@njit(parallel=True)
-def linear_in_means_model(x, adjacency, theta):
-    """
-    Numba-optimized linear-in-means model with automatic parallelization.
-    
-    Parameters:
-    -----------
-    x : numpy.ndarray
-        Node features (n × k) - must be C-contiguous
-    adjacency : numpy.ndarray
-        Adjacency matrix (n × n) - must be C-contiguous
-    theta : tuple or list
-        Parameters (a, b) - pass as tuple for better Numba performance
-    
-    Returns:
-    --------
-    numpy.ndarray
-        Generated outcomes (n × 1)
-    """
-    a, b = theta[0], theta[1]
-    n = x.shape[0]
-    y = np.zeros((n, 1), dtype=x.dtype)
-    
-    for i in prange(n):
-        neighbor_sum = 0.0
-        neighbor_count = 0
-        
-        for j in range(n):
-            if adjacency[i, j] > 0:
-                neighbor_sum += x[j, 0]
-                neighbor_count += 1
-        
-        if neighbor_count > 0:
-            mean_neighbor_x = neighbor_sum / neighbor_count
-        else:
-            mean_neighbor_x = 0.0
-            
-        y[i, 0] = a + b * mean_neighbor_x
-    
-    return y

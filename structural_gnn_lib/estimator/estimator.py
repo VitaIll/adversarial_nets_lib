@@ -61,8 +61,8 @@ class AdversarialEstimator:
             )
         
         gp_options = {
-            'n_calls': 50,
-            'n_initial_points': 15,
+            'n_calls': 150,
+            'n_initial_points': 70,
             'noise': 0.1,
             'acq_func': 'EI',
             'random_state': 42,
