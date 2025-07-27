@@ -1,13 +1,11 @@
 from .generator import (
     GeneratorBase,
     GroundTruthGenerator,
-    SyntheticGenerator,
-    linear_in_means_model
+    SyntheticGenerator
 )
 
 __all__ = [
     "GeneratorBase",
     "GroundTruthGenerator",
-    "SyntheticGenerator",
-    "linear_in_means_model"
+    "SyntheticGenerator"
 ]

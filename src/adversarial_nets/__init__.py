@@ -7,10 +7,11 @@ warnings.filterwarnings("ignore", message="An issue occurred while importing 'to
 from .generator.generator import (
     GeneratorBase,
     GroundTruthGenerator,
-    SyntheticGenerator,
-    linear_in_means_model
+    SyntheticGenerator
 )
-from .discriminator.discriminator import GraphDiscriminator
+
+from .data import GraphDataset
+
 from .estimator.estimator import AdversarialEstimator
 from .utils.utils import (
     create_dataset,
@@ -18,15 +19,14 @@ from .utils.utils import (
     objective_function
 )
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 __all__ = [
     "GeneratorBase",
     "GroundTruthGenerator", 
     "SyntheticGenerator",
-    "linear_in_means_model",
-    "GraphDiscriminator",
     "AdversarialEstimator",
     "create_dataset",
     "evaluate_discriminator",
-    "objective_function"
+    "objective_function",
+    "GraphDataset"
 ]
