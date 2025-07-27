@@ -37,7 +37,7 @@ def evaluate_discriminator(model, loader, device):
     
     Parameters:
     -----------
-    model : GraphDiscriminator
+    model : torch.nn.Module
         The GNN discriminator model
     loader : torch_geometric.data.DataLoader
         DataLoader containing evaluation data
@@ -65,7 +65,15 @@ def evaluate_discriminator(model, loader, device):
     return accuracy
 
 
-def objective_function(theta, ground_truth_generator, synthetic_generator, m=500, num_epochs=5, verbose=True):
+def objective_function(
+    theta,
+    ground_truth_generator,
+    synthetic_generator,
+    discriminator_factory,
+    m=500,
+    num_epochs=5,
+    verbose=True,
+):
     """
     Objective function for parameter estimation.
     
@@ -81,6 +89,8 @@ def objective_function(theta, ground_truth_generator, synthetic_generator, m=500
         The ground truth generator
     synthetic_generator : SyntheticGenerator
         The synthetic generator (reused across calls)
+    discriminator_factory : callable
+        Callable that returns a discriminator model given ``input_dim``.
     m : int
         Number of nodes to sample for subgraphs
     num_epochs : int
@@ -93,8 +103,6 @@ def objective_function(theta, ground_truth_generator, synthetic_generator, m=500
     float
         Test accuracy of the discriminator (objective to minimize)
     """
-    from ..discriminator.discriminator import GraphDiscriminator
-    
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     synthetic_generator.generate_outcomes(theta)
@@ -111,9 +119,8 @@ def objective_function(theta, ground_truth_generator, synthetic_generator, m=500
     train_loader = DataLoader(train_data, batch_size=256, shuffle=True)
     test_loader = DataLoader(test_data, batch_size=256, shuffle=False)
     
-    input_dim = real_subgraphs[0].x.shape[1]  
-    hidden_dim = 16 
-    model = GraphDiscriminator(input_dim, hidden_dim).to(device)
+    input_dim = real_subgraphs[0].x.shape[1]
+    model = discriminator_factory(input_dim).to(device)
     
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)  
     criterion = nn.CrossEntropyLoss()

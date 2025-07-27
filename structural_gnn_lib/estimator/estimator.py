@@ -1,22 +1,35 @@
 from skopt import gp_minimize
+
 from ..generator.generator import GroundTruthGenerator, SyntheticGenerator
 from ..utils.utils import objective_function
 
 class AdversarialEstimator:
-    def __init__(self, ground_truth_data, structural_model, initial_params, bounds, optimizer=None):
+    def __init__(
+        self,
+        ground_truth_data,
+        structural_model,
+        initial_params,
+        bounds,
+        discriminator_factory,
+        gp_params=None,
+    ):
         """
         Initialize the adversarial estimator.
         
-        Parameters:
-        -----------
-        ground_truth_data : dict
-            Dictionary containing X, Y, A, N
+        Parameters
+        ----------
+        ground_truth_data : object
+            Data object containing attributes X, Y, A, N
         structural_model : callable
             Function that generates synthetic outcomes
         initial_params : array-like
             Initial parameter values
-        optimizer : object, optional
-            Optimizer to use (defaults to gp_minimize)
+        bounds : list
+            Bounds for parameters used by the optimizer
+        discriminator_factory : callable
+            Callable returning a discriminator model given ``input_dim``
+        gp_params : dict, optional
+            Additional parameters passed to ``gp_minimize``
         """
         self.ground_truth_generator = GroundTruthGenerator(
             ground_truth_data.X,
@@ -32,35 +45,40 @@ class AdversarialEstimator:
         
         self.initial_params = initial_params
         self.bounds = bounds
-        self.optimizer = optimizer
+        self.discriminator_factory = discriminator_factory
+        self.gp_params = gp_params or {}
 
         
-    def estimate(self, m, num_epochs=20, n_calls=500, verbose=True):
-        """
-        Run the adversarial estimation.
-        """
+    def estimate(self, m, num_epochs=20, verbose=True):
+        """Run the adversarial estimation."""
 
         def objective_with_generator(theta):
             return objective_function(
                 theta,
                 self.ground_truth_generator,
-                self.synthetic_generator,  # Reuse the same instance
-                m,
+                self.synthetic_generator,
+                self.discriminator_factory,
+                m=m,
                 num_epochs=num_epochs,
-                verbose=verbose
+                verbose=verbose,
             )
 
+
+        gp_options = {
+            'n_calls': 50,
+            'n_initial_points': 15,
+            'noise': 0.1,
+            'acq_func': 'EI',
+            'random_state': 42,
+            'n_jobs': -1,
+            'verbose': verbose,
+        }
+        gp_options.update(self.gp_params)
 
         result = gp_minimize(
             objective_with_generator,
             self.bounds,
-            n_calls=n_calls,
-            n_initial_points=int(0.3 * n_calls),
-            noise=0.1,
-            acq_func='EI',
-            random_state=42,
-            n_jobs=-1,
-            verbose=verbose
+            **gp_options,
         )
         
         return result

@@ -35,4 +35,14 @@ Is a test notebook showcasing the estimation on 2-parameter case where objective
 ## Notes
 - As of now utils are specific to the discriminator use in linear in means experiment, but should be generalized.
 - Architecture of GNN for the experiment is chosen ad hoc since the identification is strong.
-- Linear experiment uses accuracy as a minimization objective, for more complex models more sensitive metrics are necessary.a
+- Linear experiment uses accuracy as a minimization objective, for more complex models more sensitive metrics are necessary.
+
+## Usage
+The library exposes a simple workflow:
+
+1. **Prepare data** using ``GraphDataset`` with fields ``X``, ``Y``, ``A`` and ``N``.
+2. **Define a discriminator** as a callable accepting ``input_dim`` and returning a ``torch.nn.Module``.
+3. **Implement your structural model** mapping ``(X, A, theta)`` to outcomes.
+4. **Tune GP hyperparameters** (``n_calls`` etc.) if needed.
+5. **Run** ``AdversarialEstimator`` to estimate the parameters automatically.
+

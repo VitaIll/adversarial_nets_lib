@@ -8,15 +8,16 @@ from .generator.generator import (
     GeneratorBase,
     GroundTruthGenerator,
     SyntheticGenerator,
-    linear_in_means_model
+    linear_in_means_model,
 )
 from .discriminator.discriminator import GraphDiscriminator
 from .estimator.estimator import AdversarialEstimator
 from .utils.utils import (
     create_dataset,
     evaluate_discriminator,
-    objective_function
+    objective_function,
 )
+from .data import GraphDataset
 
 __version__ = "0.1.0"
 __all__ = [
@@ -28,5 +29,6 @@ __all__ = [
     "AdversarialEstimator",
     "create_dataset",
     "evaluate_discriminator",
-    "objective_function"
+    "objective_function",
+    "GraphDataset",
 ]
