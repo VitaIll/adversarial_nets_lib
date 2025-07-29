@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "structural-gnn-lib"
+name = "adversarial-lib"
 version = "0.1.1"
 description = "Adversarial estimator for structural models on graphs"
 readme = "README.md"
@@ -21,6 +21,3 @@ dependencies = [
     "torch-geometric>=2.3.0",
     "scikit-learn>=1.0"
 ]
-
-[project.urls]
-Homepage = "https://github.com/VitaIll/adversarial_nets_lib"
