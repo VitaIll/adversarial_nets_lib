@@ -103,42 +103,49 @@ class GroundTruthGenerator(GeneratorBase):
 
 class SyntheticGenerator(GeneratorBase):
     """Generator for synthetic data using structural models."""
-    
-    def __init__(self, ground_truth_generator, structural_model):
-        """
-        Initialize synthetic generator inheriting structure from ground truth.
-        
-        Parameters:
-        -----------
+
+    def __init__(self, ground_truth_generator, structural_model, initial_outcomes=None):
+        """Initialize synthetic generator inheriting structure from ground truth.
+
+        Parameters
+        ----------
         ground_truth_generator : GroundTruthGenerator
-            Ground truth generator instance to inherit X, A, N from
+            Ground truth generator instance to inherit ``X``, ``A``, ``N`` from.
         structural_model : callable
-            Function that takes (X, A, theta) and returns synthetic Y
+            Function implementing the structural mapping
+
+            ``structural_model(X, P, Y0, theta) -> Y'``
+        initial_outcomes : numpy.ndarray, optional
+            Initial outcome state ``Y0`` used by the structural model. If
+            ``None`` a zero matrix with the appropriate shape is used.
         """
-     
+
         super().__init__(
             ground_truth_generator.x,
-            ground_truth_generator.y,  
+            ground_truth_generator.y,
             ground_truth_generator.adjacency,
-            ground_truth_generator.node_indices
+            ground_truth_generator.node_indices,
         )
+
         self.structural_model = structural_model
-    
+        self.initial_outcomes = (
+            initial_outcomes
+            if initial_outcomes is not None
+            else np.zeros_like(ground_truth_generator.y)
+        )
+
+        # Peer operator with zero diagonal as specified in the README
+        self.peer_operator = self.adjacency - np.diag(np.diag(self.adjacency))
+
     def generate_outcomes(self, theta):
-        """
-        Generate synthetic outcomes using the structural model.
-        
-        Parameters:
-        -----------
-        theta : numpy.ndarray or list
-            Parameter vector for the structural model
-        
-        Returns:
-        --------
-        numpy.ndarray
-            Generated outcomes Y' matrix
-        """
-        self.y = self.structural_model(self.x, self.adjacency, theta)
+        """Generate synthetic outcomes using the structural model."""
+
+        self.y = self.structural_model(
+            self.x,
+            self.peer_operator,
+            self.initial_outcomes,
+            theta,
+        )
         return self.y
 
 
