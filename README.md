@@ -1,171 +1,86 @@
-# Adversarial Estimation on Graphs
+# Adversarial estimation on graphs
 
-This repository implements **adversarial structural estimation** for graph-based models (peer effects, strategic communication games, diffusion, etc.), extending the framework of Kaji–Manresa–Pouliot (Econometrica, 2023) to settings where data are observed on a **single network**. Because a graph is typically one realization (not i.i.d. rows), we build variability by sampling **subgraphs** from the observed (“real”) network and from a **structural simulator** (“generator”), then train a **GNN discriminator** to distinguish real vs simulated subgraphs. Structural parameters are chosen to make the discriminator’s job as hard as possible—mirroring the original GAN min–max game.
+This project adapts the adversarial estimator of Kaji, Manresa & Pouliot (2023) to structural models defined on graphs (e.g., strategic communication, peer effects). In tabular settings, each row is treated as an i.i.d. draw. With graph data the entire graph is typically a single realization, so we induce variability for the discriminator by sampling subgraphs from both the ground-truth and the synthetic graph and training a classifier to distinguish their origins. Intuitively, local neighborhoods carry enough information about global structure to power discrimination—consistent with common GNN practice (e.g., $k$-hop ego sampling) and graph-GAN work that discriminates on local walks/subgraphs. ([arXiv][1], [pytorch-geometric.readthedocs.io][2])
 
----
+## Formal setup
 
-## Notation 
+**Observed graph.** Let $G=(X,Y,N,A)$ with:
 
-**Observed graph.**
+* $X\in\mathbb{R}^{n\times k}$: exogenous node covariates (row $i$ is $x_i^\top$).
+* $Y\in\mathbb{R}^{n\times \ell}$: endogenous node outcomes (row $i$ is $y_i^\top$).
+* $N=\{1,\dots,n\}$: node index set.
+* $A\in\{0,1\}^{n\times n}$: undirected adjacency, symmetric. We work with a **peer operator** $\,P(A)\,$ that **excludes self-links**:
 
-$$
-G_{\text{data}} = (X, Y, A),
-\quad X\in\mathbb{R}^{n\times k},\; Y\in\mathbb{R}^{n\times \ell},\;
-A\in\{0,1\}^{n\times n}\ \text{(symmetric; zero diagonal by default)}.
-$$
+  $$
+  P(A)\;=\;A-\operatorname{diag}(A)\qquad\text{(no self-to-self influence)}
+  $$
 
-**Structural simulator (generator).**
-We model outcomes via a structural **operator** on outcomes:
+  Optionally $P(A)$ may be row/degree normalized; the formulation below only requires $P(A)$ to have zero diagonal.
 
-$$
-F_\theta:\ \mathbb{R}^{n\times \ell}\to \mathbb{R}^{n\times \ell},\qquad 
-Y^{(t+1)} = F_\theta\!\big(X, A, Y^{(t)}, \varepsilon^{(t)}\big),
-$$
-
-with shocks $\varepsilon$ (and an equilibrium-selection rule if multiple equilibria exist). This unifies:
-
-* **Static mapping (special case):** $m_\theta(X,A,\varepsilon) = F_\theta(X,A,\mathbf{0},\varepsilon)$ (no dependence on $Y$).
-* **Fixed-point/equilibrium:** $Y_\theta = F_\theta(X,A,Y_\theta,\varepsilon)$.
-* **K-step dynamics:** start from $Y^{(0)} = Y_{\text{init}}$ and iterate $K$ times to get $Y^{(K)}$.
-
-The model induces a **synthetic graph** $G_\theta=(X, Y_\theta, A)$ and a distribution $p_\theta$ over outcomes (via $\varepsilon$ and equilibrium selection).
-
-**Identity generalization (requested).**
-We allow $F_\theta$ to include the **identity operator** as a limiting/edge case:
+**Structural model (generator).** A structural mapping
 
 $$
-F_{\theta_{\text{id}}}(X,A,Y,\varepsilon) \equiv Y,
+m_\theta:\ \big(X,\,P(A),\,Y^{(0)},\,\xi\big)\ \longmapsto\ Y' \in \mathbb{R}^{n\times \ell}
 $$
 
-or via a convex mixture
+takes covariates, the peer operator, and an **initial outcome state** $Y^{(0)}$ (e.g., pre-interaction signals, baseline choices, or an initialization such as zeros) and returns simulated outcomes $Y'$. The innovation $\xi$ captures simulation randomness if present.
 
-$$
-F_{\theta,\alpha}(X,A,Y,\varepsilon)
-= \alpha\,\tilde F_\theta(X,A,Y,\varepsilon) + (1-\alpha)\,Y,\qquad \alpha\in[0,1].
-$$
+* **Single-step (peer-to-peer, no self-loop):**
 
-We also allow $Y_{\text{init}}$ to be:
+  $$
+  Y' \;=\; m_\theta\!\Big(X,\;P(A)\,Y^{(0)}\,,\;\xi\Big),
+  $$
 
-* zeros or noise (fresh simulation),
-* a baseline predictor,
-* the **observed** $Y_{\text{data}}$ (warm start).
+  i.e., each $y_i'$ depends on $x_i$ and **peers’ initial outcomes** $\{y_j^{(0)}: j\in \mathcal{N}(i)\}$, but not on $y_i^{(0)}$ directly.
+* **Multi-step propagation (optional):** for $t=0,\dots,T-1$,
 
-> ⚠️ **Degeneracy warning.**
-> If $Y_{\text{init}}=Y_{\text{data}}$ and either $K=0$ **or** $\alpha=0$, then $G_\theta=G_{\text{data}}$ and the adversarial objective becomes uninformative. Treat identity/warm-start as **diagnostic baselines** or enforce constraints (e.g., $K\!\ge\!1$, $\alpha\!\ge\!\alpha_{\min}\!>\!0$) or penalties keeping the identity neighborhood out of the feasible set during estimation.
+  $$
+  Y^{(t+1)} \;=\; m_\theta\!\Big(X,\;P(A)\,Y^{(t)}\,,\;\xi^{(t)}\Big),\qquad Y'\equiv Y^{(T)}.
+  $$
 
-**Subgraph sampling.**
-Let $\mathcal{S}$ denote a subgraph sampler (e.g., $k$-hop ego-nets, random-walk-induced subgraphs). Sampling induces two distributions over subgraphs $g\in\mathcal{G}$:
+  This allows $k$-hop effects to accrue while maintaining zero diagonal in $P(A)$.
 
-$$
-p_{\text{data}}^{\mathcal{S}}\quad\text{from }G_{\text{data}},\qquad
-p_{\theta}^{\mathcal{S}}\quad\text{from }G_\theta.
-$$
+**Synthetic graph.** $G'(\theta)=(X,\;Y',\;N,\;A)$ where $Y'=m_\theta(X,P(A),Y^{(0)},\xi)$. Exogenous features and the topology are held fixed so that identification comes from matching the **distribution of outcomes over (sampled) subgraphs**.
 
-**Discriminator.**
-A GNN $D_\phi:\mathcal{G}\to[0,1]$ outputs the probability a subgraph is **real**.
+**Subgraph sampling.** Let $\mathsf{S}$ be a randomized sampler (e.g., $k$-hop ego nets, rooted random-walk subgraphs). Sampling from $G$ induces $p_{\text{data}}^{\mathsf{S}}$ over subgraphs $g$; sampling from $G'(\theta)$ induces $p_\theta^{\mathsf{S}}$. ([pytorch-geometric.readthedocs.io][2])
 
----
+**Discriminator.** A GNN-based discriminator $D_\phi: g \mapsto [0,1]$ outputs the probability that subgraph $g$ is from the ground-truth distribution $p_{\text{data}}^{\mathsf{S}}$.
 
-## Adversarial Objective
+**Adversarial objective (Goodfellow-style).** We estimate $\theta$ by the GAN minimax program
 
-Using the standard GAN (Goodfellow et al.) cross-entropy on **subgraphs**:
+```math
+\min_{\theta}\ \max_{\phi}\ 
+\mathbb{E}_{g\sim p_{\text{data}}^{\mathsf{S}}}\big[\log D_\phi(g)\big]
++ \mathbb{E}_{g\sim p_{\theta}^{\mathsf{S}}}\big[\log\!\big(1-D_\phi(g)\big)\big],
+```
 
-$$
-V(\phi,\theta)
-=\mathbb{E}_{g\sim p_{\text{data}}^{\mathcal{S}}}\!\big[\log D_\phi(g)\big]
-\;+\;
-\mathbb{E}_{g\sim p_\theta^{\mathcal{S}}}\!\big[\log (1-D_\phi(g))\big].
-$$
+which reduces (for an optimal discriminator) to minimizing the Jensen–Shannon divergence between $p_{\text{data}}^{\mathsf{S}}$ and $p_{\theta}^{\mathsf{S}}$. This is the standard GAN formulation with generator $m_\theta$ and discriminator $D_\phi$. ([arXiv][3], [papers.neurips.cc][4])
 
-Estimate $\theta$ via the min–max game:
+Equivalently, your earlier statement “minimize a classification loss achieved by the optimal $D$” corresponds to minimizing the negative log-likelihood / cross-entropy implied by the expression above (accuracy is a coarser surrogate). The adversarial estimator connects to the Kaji–Manresa–Pouliot framework, which studies the statistical properties of such minimax estimators for structural models. ([arXiv][1], [Institute for Fiscal Studies][5])
 
-$$
-\theta^\star \in \arg\min_\theta\ \max_\phi\ V(\phi,\theta).
-$$
+## Practical implementation
 
-With the optimal discriminator
-$D_\phi^\star(g) = \frac{p_{\text{data}}^{\mathcal{S}}(g)}{p_{\text{data}}^{\mathcal{S}}(g) + p_\theta^{\mathcal{S}}(g)}$,
-the generator minimizes the **Jensen–Shannon divergence** between
-$p_{\text{data}}^{\mathcal{S}}$ and $p_\theta^{\mathcal{S}}$ (up to a constant).
-*Training note:* many implementations use the **non-saturating** generator loss
-$-\,\mathbb{E}_{g\sim p_\theta^{\mathcal{S}}}\log D_\phi(g)$ for better gradients.
+* **Discriminator.** Implement $D_\phi$ with PyTorch Geometric. Use $k$-hop ego nets or rooted random-walk subgraphs as $\mathsf{S}$; both are available as transforms/utilities (e.g., `RootedEgoNets`). ([pytorch-geometric.readthedocs.io][2])
+* **Generators.**
 
----
+  * *Ground truth generator*: sampling manager over $G$ producing subgraphs $g\sim p_{\text{data}}^{\mathsf{S}}$.
+  * *Synthetic generator*: wraps the structural mapping $m_\theta$. It reuses $X,A$ (and chosen $Y^{(0)}$) from the ground truth, constructs $P(A)$ with zero diagonal, and produces $Y'$. It exposes `generate_outcomes(θ)` to simulate counterfactual outcomes and align subgraph sampling with the ground-truth sampler.
+* **Optimization.** The outer problem is black-box in $\theta$; Bayesian optimization is a reasonable default. Use the **binary cross-entropy** induced by the GAN objective (not raw accuracy) as the scalar objective passed to the optimizer; this aligns the estimator with the minimax program above. ([arXiv][3])
 
-## Practical Implementation
+## `linear_in_means_model.ipynb`
 
-### Components
+A two-parameter testbed illustrating training curves and objective values. (For linear-in-means $Y=(I-\rho P)^{-1}(X\beta+\varepsilon)$, the no-self-loop restriction is satisfied by construction via $P(A)$ and invertibility requires $|\rho|<1/\lambda_{\max}(P)$.)
 
-* **Discriminator (`D_φ`).**
-  Implemented with PyTorch Geometric as a GNN binary classifier on subgraphs (node features, optional edge features, outcomes).
+## Notes
 
-* **Generator (structural simulator).**
-  Unified interface handles *both* real and synthetic sampling. The **real** branch is a sampling manager over $G_{\text{data}}$. The **synthetic** branch wraps your structural operator $F_\theta$, reusing $X,A$ from the real graph to align covariates and topology, and exposes:
+* Current utils target the linear-in-means demo; they can be generalized to other structural classes by swapping $m_\theta$ and the subgraph sampler $\mathsf{S}$.
+* GNN architecture for $D_\phi$ is chosen ad hoc in the demo; stronger identification may tolerate simple discriminators.
+* The demo reports accuracy; for estimation we recommend minimizing the cross-entropy implied by the GAN objective.
 
-  * `generate_outcomes(θ, y_init=None, n_steps=1, mix_alpha=None, rng=None)` → $Y^{(K)}$.
+## Reference
 
-    * `y_init=None` → default init (zeros/noise).
-    * `mix_alpha∈[0,1]` → applies $F_{\theta,\alpha} = \alpha \tilde F_\theta + (1-\alpha) I$.
-    * Guards recommended to forbid identity during **training** but allow it in **ablations**.
-
-* **Subgraph sampler (`𝒮`).**
-  First-class component (e.g., $k$-hop, degree-stratified, random-walk with restart). The choice of $\mathcal{S}$ defines the target subgraph distribution and matters for identifiability.
-
-* **Outer optimizer over $\theta$.**
-  Default: **Bayesian optimization** (black-box friendly, handles non-differentiable $F_\theta$). If $F_\theta$ is differentiable end-to-end, you may alternate gradient steps in $(\phi,\theta)$ like standard GANs; otherwise keep BO.
-
-### Training protocol (suggested)
-
-1. **Split** sampled subgraphs into train/val/test at the *subgraph* level (avoid leakage by node overlap if relevant).
-2. **Train** $D_\phi$ with cross-entropy to distinguish $p_{\text{data}}^{\mathcal{S}}$ vs $p_\theta^{\mathcal{S}}$.
-3. **Update** $\theta$ (BO step or gradient step) based on validation $V(\phi,\theta)$.
-4. **Repeat** until convergence/stopping.
-5. **Report** test $V(\phi,\theta^\star)$ and (optionally) calibration metrics of $D_\phi$ to ensure a meaningful game.
-
-### Multiple equilibria & shocks
-
-Specify the **equilibrium-selection rule** and the distribution of shocks $\varepsilon$; both are part of $p_\theta$. For dynamic models, document $K$, $\alpha$, and the initialization $Y_{\text{init}}$.
-
----
-
-## Example: `linear_in_means_model.ipynb`
-
-A two-parameter peer-effects testbed demonstrating:
-
-* $k$-hop ego-net sampling,
-* training a simple GNN discriminator,
-* the min–max optimization trace for $\theta$,
-* ablations with identity/warm-start (diagnostics only).
-
----
-
-## Notes & Current Limitations
-
-* Utilities are currently tailored to the linear-in-means demo; generalization is planned.
-* For quick visualization the notebook may show **accuracy**, but training and selection use **log-loss** aligned with the GAN objective.
-* Richer discriminators and smarter samplers (e.g., degree/centrality stratification) often improve identification.
-* For very large graphs, add assumptions (stationarity/mixing or large-$n$ regimes) justifying that $\mathcal{S}$ yields a stable subgraph distribution.
-
----
-
-## Optional Recommendations
-
-* **Guard against identity degeneracy.** Enforce $K\!\ge\!1$ and/or $\alpha\!\ge\!\alpha_{\min}\!>\!0$ during training; allow identity only in ablations.
-* **Make `𝒮` pluggable.** Expose clear interfaces so experiments vary only $F_\theta$ or $\mathcal{S}$.
-* **Use proper scoring rules.** Prefer cross-entropy/Brier over accuracy for model selection and BO targets.
-* **Log equilibrium details.** Record equilibrium selection, shock seeds, and sampler config for reproducibility.
-
----
-
-## References
-
-* **Kaji, T., Manresa, E., & Pouliot, G. (2023).** *An Adversarial Approach to Structural Estimation.* **Econometrica**, 91(6), 2041–2063.
-* **Goodfellow, I., Pouget-Abadie, J., et al. (2014).** *Generative Adversarial Nets.* NeurIPS.
-* **Goodfellow, I. (2016).** *NIPS 2016 Tutorial: Generative Adversarial Networks.* (non-saturating loss; practical tips).
-
----
-
-## Citation
-
-If you use this code, please cite both this repository.
+* Goodfellow, I., et al. (2014). *Generative Adversarial Networks.* NeurIPS. ([papers.neurips.cc][4])
+* Kaji, T., Manresa, E., & Pouliot, G. (2023). *An adversarial approach to structural estimation.* *Econometrica.* (working-paper version: 2020 arXiv / IFS). ([arXiv][1], [Institute for Fiscal Studies][5])
+* Hamilton, W., Ying, R., & Leskovec, J. (2017). *GraphSAGE: Inductive Representation Learning on Large Graphs.* NeurIPS. (for neighborhood sampling design). ([papers.neurips.cc][6])
+* Bojchevski, A., et al. (2018). *NetGAN: Generating Graphs via Random Walks.* ICML. (graph-GAN perspective; WGAN objective). ([Proceedings of Machine Learning Research][7])
 
