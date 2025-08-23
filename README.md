@@ -14,10 +14,10 @@ Adversarial estimator for graph structural models extends the theoretical framew
 We work with a **peer operator** \$P(A)\$ that **excludes self-links**:
 
 ```math
-P(A) = A - \operatorname{diag}(A)
+P(A) = A - \mathrm{diag}(A)
 ```
 
-Optionally, \$P(A)\$ may be row/degree-normalized; we only require \$\operatorname{diag}(P(A))=0\$.
+Optionally, \$P(A)\$ may be row/degree-normalized; we only require \$\mathrm{diag}!\big(P(A)\big)=0\$.
 
 **Structural model (generator).** A structural mapping
 
@@ -44,27 +44,27 @@ Y^{(t+1)} = m_\theta\!\Big(X,\ P(A)\,Y^{(t)},\ \xi^{(t)}\Big),
 
 **Synthetic data.** Define \$G'(\theta)=(X,\ Y',\ N,\ A)\$ with \$Y'=m\_\theta(X,P(A),Y^{(0)},\xi)\$. Exogenous features and topology are held fixed so identification comes from matching the **distribution of outcomes over sampled subgraphs**.
 
-**Subgraph sampling.** Let \$\mathsf{S}\$ denote a randomized sampler (e.g., \$k\$-hop ego nets or rooted random-walk subgraphs). Sampling from \$G\$ induces \$p\_{\text{data}}^{\mathsf{S}}\$ over subgraphs \$g\$; sampling from \$G'(\theta)\$ induces \$p\_{\theta}^{\mathsf{S}}\$.
+**Subgraph sampling.** Let \$\mathsf{S}\$ denote a randomized sampler (e.g., \$k\$-hop ego nets or rooted random-walk subgraphs). Sampling from \$G\$ induces \$p\_{\mathrm{data}}^{\mathsf{S}}\$ over subgraphs \$g\$; sampling from \$G'(\theta)\$ induces \$p\_{\theta}^{\mathsf{S}}\$.
 
-**Discriminator.** A GNN discriminator \$D\_\phi: g\mapsto\[0,1]\$ outputs the probability that \$g\$ came from \$p\_{\text{data}}^{\mathsf{S}}\$.
+**Discriminator.** A GNN discriminator \$D\_\phi: g\mapsto\[0,1]\$ outputs the probability that \$g\$ came from \$p\_{\mathrm{data}}^{\mathsf{S}}\$.
 
 **Adversarial objective (Goodfellow-style).** Estimate \$\theta\$ by
 
 ```math
 \min_{\theta}\ \max_{\phi}\ 
-\mathbb{E}_{g\sim p_{\text{data}}^{\mathsf{S}}}\!\big[\log D_\phi(g)\big]
+\mathbb{E}_{g\sim p_{\mathrm{data}}^{\mathsf{S}}}\!\big[\log D_\phi(g)\big]
 \;+\;
 \mathbb{E}_{g\sim p_{\theta}^{\mathsf{S}}}\!\big[\log\big(1-D_\phi(g)\big)\big].
 ```
 
-At the optimal discriminator this minimizes the Jensen–Shannon divergence between \$p\_{\text{data}}^{\mathsf{S}}\$ and \$p\_{\theta}^{\mathsf{S}}\$. Your earlier “minimize the classification loss under the optimal \$D\$” is equivalent to minimizing the implied cross-entropy; raw accuracy is a much coarser surrogate.
+At the optimal discriminator this minimizes the Jensen–Shannon divergence between \$p\_{\mathrm{data}}^{\mathsf{S}}\$ and \$p\_{\theta}^{\mathsf{S}}\$. Your earlier “minimize the classification loss under the optimal \$D\$” is equivalent to minimizing the implied cross-entropy; raw accuracy is a much coarser surrogate.
 
 ## Practical implementation
 
 * **Discriminator.** Implement \$D\_\phi\$ with PyTorch Geometric. Use the same sampler \$\mathsf{S}\$ (e.g., \$k\$-hop ego nets or rooted random-walk subgraphs) for real and synthetic graphs to keep the target distribution fixed.
 * **Generators.**
 
-  * *Ground-truth generator*: sampling manager over \$G\$ to produce \$g\sim p\_{\text{data}}^{\mathsf{S}}\$.
+  * *Ground-truth generator*: sampling manager over \$G\$ to produce \$g\sim p\_{\mathrm{data}}^{\mathsf{S}}\$.
   * *Synthetic generator*: wraps \$m\_\theta\$, reuses \$X\$, \$A\$ (and chosen \$Y^{(0)}\$), constructs \$P(A)\$ with zero diagonal, and exposes `generate_outcomes(θ)` for counterfactual simulation.
 * **Optimization.** Treat the outer problem as black-box in \$\theta\$. Bayesian optimization is a reasonable default; use **binary cross-entropy** from the objective above (not accuracy) as the scalar loss.
 
@@ -91,4 +91,3 @@ the no-self-loop restriction holds via \$P(A)\$ and invertibility requires
 ## Reference
 
 Kaji, T., Manresa, E., & Pouliot, G. (2023). *An adversarial approach to structural estimation*. **Econometrica**, 91(6), 2041–2063.
-
