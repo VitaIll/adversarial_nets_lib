@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "adversarial-lib"
+name = "adversarial-nets-lib-econ"
 version = "0.1.1"
 description = "Adversarial estimator for structural models on graphs"
 readme = "README.md"
