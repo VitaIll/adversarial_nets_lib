@@ -57,7 +57,7 @@ Y^{(t+1)} = m_\theta\!\Big(X,\ P(A)\,Y^{(t)},\ \xi^{(t)}\Big),
 \mathbb{E}_{g\sim p_{\theta}^{\mathsf{S}}}\!\big[\log\big(1-D_\phi(g)\big)\big].
 ```
 
-At the optimal discriminator this minimizes the Jensen–Shannon divergence between \$p\_{\mathrm{data}}^{\mathsf{S}}\$ and \$p\_{\theta}^{\mathsf{S}}\$. Your earlier “minimize the classification loss under the optimal \$D\$” is equivalent to minimizing the implied cross-entropy; raw accuracy is a much coarser surrogate.
+At the optimal discriminator this minimizes the Jensen–Shannon divergence between \$p\_{\mathrm{data}}^{\mathsf{S}}\$ and \$p\_{\theta}^{\mathsf{S}}\$. 
 
 ## Practical implementation
 
