@@ -65,7 +65,7 @@ At the optimal discriminator this minimizes the Jensen–Shannon divergence betw
 * **Generators.**
 
   * *Ground-truth generator*: sampling manager over \$G\$ to produce \$g\sim p\_{\mathrm{data}}^{\mathsf{S}}\$.
-  * *Synthetic generator*: wraps \$m\_\theta\$, reuses \$X\$, \$A\$ (and chosen \$Y^{(0)}\$), constructs \$P(A)\$ with zero diagonal, and exposes `generate_outcomes(θ)` for counterfactual simulation.
+  * *Synthetic generator*: wraps \$m\_\theta\$, reuses \$X\$, \$A\$ and the chosen initial state \$Y^{(0)}\$ (passed through the estimator), constructs \$P(A)\$ with zero diagonal, and exposes `generate_outcomes(θ)` for counterfactual simulation.
 * **Optimization.** Treat the outer problem as black-box in \$\theta\$. Bayesian optimization is a reasonable default; use **binary cross-entropy** from the objective above (not accuracy) as the scalar loss.
 
 ## `linear_in_means_model.ipynb`

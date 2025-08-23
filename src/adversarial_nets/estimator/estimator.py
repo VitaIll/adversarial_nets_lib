@@ -17,10 +17,13 @@ class AdversarialEstimator:
         
         Parameters
         ----------
-        ground_truth_data : object
-            Data object containing attributes X, Y, A, N
+            ground_truth_data : object
+            Data object containing attributes ``X``, ``Y``, ``A``, ``N`` and
+            optionally an initial outcome state ``Y0``.
         structural_model : callable
-            Function that generates synthetic outcomes
+            Function implementing the structural mapping
+
+            ``structural_model(X, P, Y0, theta) -> Y'``
         initial_params : array-like
             Initial parameter values
         bounds : list
@@ -38,8 +41,9 @@ class AdversarialEstimator:
         )
         
         self.synthetic_generator = SyntheticGenerator(
-            self.ground_truth_generator, 
-            structural_model
+            self.ground_truth_generator,
+            structural_model,
+            initial_outcomes=getattr(ground_truth_data, "Y0", None),
         )
         
         self.initial_params = initial_params
