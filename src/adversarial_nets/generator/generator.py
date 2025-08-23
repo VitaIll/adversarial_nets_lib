@@ -140,12 +140,27 @@ class SyntheticGenerator(GeneratorBase):
     def generate_outcomes(self, theta):
         """Generate synthetic outcomes using the structural model."""
 
-        self.y = self.structural_model(
-            self.x,
-            self.peer_operator,
-            self.initial_outcomes,
-            theta,
-        )
+        # Support structural models that either require an initial outcome
+        # state ``Y0`` or ignore it. We inspect the callable signature and
+        # pass the appropriate number of arguments accordingly.
+        try:
+            from inspect import signature
+
+            n_params = len(signature(self.structural_model).parameters)
+        except Exception:
+            # Fallback: assume the full four-argument signature.
+            n_params = 4
+
+        if n_params == 4:
+            args = (self.x, self.peer_operator, self.initial_outcomes, theta)
+        elif n_params == 3:
+            args = (self.x, self.peer_operator, theta)
+        else:
+            raise TypeError(
+                "structural_model must accept either 3 or 4 positional arguments"
+            )
+
+        self.y = self.structural_model(*args)
         return self.y
 
 

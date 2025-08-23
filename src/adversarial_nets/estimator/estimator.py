@@ -11,6 +11,7 @@ class AdversarialEstimator:
             bounds,
             discriminator_factory,
             gp_params=None,
+            metric="neg_logloss",
         ):
         """
         Initialize the adversarial estimator.
@@ -32,6 +33,9 @@ class AdversarialEstimator:
             Callable returning a discriminator model given ``input_dim``
         gp_params : dict, optional
             Additional parameters passed to ``gp_minimize``
+        metric : str, optional
+            Evaluation metric for the discriminator. Passed to
+            :func:`objective_function`.
         """
         self.ground_truth_generator = GroundTruthGenerator(
             ground_truth_data.X,
@@ -50,6 +54,7 @@ class AdversarialEstimator:
         self.bounds = bounds
         self.discriminator_factory = discriminator_factory
         self.gp_params = gp_params or {}
+        self.metric = metric
         
     def estimate(self, m, num_epochs=20, verbose=True):
         """Run the adversarial estimation."""
@@ -58,11 +63,12 @@ class AdversarialEstimator:
             return objective_function(
                 theta,
                 self.ground_truth_generator,
-                self.synthetic_generator, 
+                self.synthetic_generator,
                 m=m,
                 num_epochs=num_epochs,
                 discriminator_factory=self.discriminator_factory,
-                verbose=verbose
+                verbose=verbose,
+                metric=self.metric,
             )
         
         gp_options = {
