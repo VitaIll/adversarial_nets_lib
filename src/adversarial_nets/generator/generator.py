@@ -35,46 +35,61 @@ class GeneratorBase(ABC):
         
         self.G = nx.from_numpy_array(adjacency)
     
-    def sample_subgraphs(self, node_ids):
-        """
-        Extract induced subgraphs centered on specified nodes.
-        
-        For each node in node_ids, creates a subgraph containing the node and all
-        its neighbors, with features and outcomes preserved from the original graph.
-        
-        Parameters:
-        -----------
+    def sample_subgraphs(self, node_ids, k_hops=1):
+        """Extract ego subgraphs centered on specified nodes.
+
+        For each node in ``node_ids`` an ego network with radius ``k_hops``
+        is extracted from the original graph. Node features and outcomes are
+        preserved from the original graph and combined into a
+        :class:`~torch_geometric.data.Data` object.
+
+        Parameters
+        ----------
         node_ids : list
-            List of node indices to sample subgraphs from
-        
-        Returns:
-        --------
+            List of node indices to sample subgraphs from.
+        k_hops : int, optional
+            Radius of the ego network around each ``node``. ``k_hops=1``
+            reduces to the previous behaviour of including only immediate
+            neighbours. Defaults to ``1``.
+
+        Returns
+        -------
         list
-            List of PyTorch Geometric Data objects representing subgraphs
+            List of PyTorch Geometric ``Data`` objects representing subgraphs.
         """
         subgraphs = []
         for node in node_ids:
-           
-            nodes = [node] + list(self.G.neighbors(node))
-            subgraph = self.G.subgraph(nodes).copy()
-            
+            # Use networkx's ego_graph to obtain nodes within ``k_hops``
+            subgraph = nx.ego_graph(self.G, node, radius=k_hops).copy()
+
+            nodes = list(subgraph.nodes)
             mapping = {n: i for i, n in enumerate(nodes)}
             subgraph = nx.relabel_nodes(subgraph, mapping)
-            
+
             x_sub = torch.tensor(self.x[nodes], dtype=torch.float)
             y_sub = torch.tensor(self.y[nodes], dtype=torch.float)
-            
+
+            if x_sub.dim() == 1:
+                x_sub = x_sub.unsqueeze(1)
+            if y_sub.dim() == 1:
+                y_sub = y_sub.unsqueeze(1)
+
             features = torch.cat([x_sub, y_sub], dim=1)
-            
-            edge_index = torch.tensor(list(subgraph.edges), dtype=torch.long).t().contiguous()
+
+            edge_index = (
+                torch.tensor(list(subgraph.edges), dtype=torch.long).t().contiguous()
+            )
             if edge_index.numel() > 0:
                 edge_index = torch.cat([edge_index, edge_index[[1, 0], :]], dim=1)
             else:
                 edge_index = torch.empty((2, 0), dtype=torch.long)
-                
-            data = Data(x=features, edge_index=edge_index, 
-                        original_nodes=nodes,  
-                        original_graph=subgraph)  
+
+            data = Data(
+                x=features,
+                edge_index=edge_index,
+                original_nodes=nodes,
+                original_graph=subgraph,
+            )
             subgraphs.append(data)
 
         return subgraphs
@@ -103,42 +118,64 @@ class GroundTruthGenerator(GeneratorBase):
 
 class SyntheticGenerator(GeneratorBase):
     """Generator for synthetic data using structural models."""
-    
-    def __init__(self, ground_truth_generator, structural_model):
-        """
-        Initialize synthetic generator inheriting structure from ground truth.
-        
-        Parameters:
-        -----------
+
+    def __init__(self, ground_truth_generator, structural_model, initial_outcomes=None):
+        """Initialize synthetic generator inheriting structure from ground truth.
+
+        Parameters
+        ----------
         ground_truth_generator : GroundTruthGenerator
-            Ground truth generator instance to inherit X, A, N from
+            Ground truth generator instance to inherit ``X``, ``A``, ``N`` from.
         structural_model : callable
-            Function that takes (X, A, theta) and returns synthetic Y
+            Function implementing the structural mapping
+
+            ``structural_model(X, P, Y0, theta) -> Y'``
+        initial_outcomes : numpy.ndarray, optional
+            Initial outcome state ``Y0`` used by the structural model. If
+            ``None`` a zero matrix with the appropriate shape is used.
         """
-     
+
         super().__init__(
             ground_truth_generator.x,
-            ground_truth_generator.y,  
+            ground_truth_generator.y,
             ground_truth_generator.adjacency,
-            ground_truth_generator.node_indices
+            ground_truth_generator.node_indices,
         )
+
         self.structural_model = structural_model
-    
+        self.initial_outcomes = (
+            initial_outcomes
+            if initial_outcomes is not None
+            else np.zeros_like(ground_truth_generator.y)
+        )
+
+        # Peer operator with zero diagonal as specified in the README
+        self.peer_operator = self.adjacency - np.diag(np.diag(self.adjacency))
+
     def generate_outcomes(self, theta):
-        """
-        Generate synthetic outcomes using the structural model.
-        
-        Parameters:
-        -----------
-        theta : numpy.ndarray or list
-            Parameter vector for the structural model
-        
-        Returns:
-        --------
-        numpy.ndarray
-            Generated outcomes Y' matrix
-        """
-        self.y = self.structural_model(self.x, self.adjacency, theta)
+        """Generate synthetic outcomes using the structural model."""
+
+        # Support structural models that either require an initial outcome
+        # state ``Y0`` or ignore it. We inspect the callable signature and
+        # pass the appropriate number of arguments accordingly.
+        try:
+            from inspect import signature
+
+            n_params = len(signature(self.structural_model).parameters)
+        except Exception:
+            # Fallback: assume the full four-argument signature.
+            n_params = 4
+
+        if n_params == 4:
+            args = (self.x, self.peer_operator, self.initial_outcomes, theta)
+        elif n_params == 3:
+            args = (self.x, self.peer_operator, theta)
+        else:
+            raise TypeError(
+                "structural_model must accept either 3 or 4 positional arguments"
+            )
+
+        self.y = self.structural_model(*args)
         return self.y
 
 

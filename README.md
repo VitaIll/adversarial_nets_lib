@@ -1,38 +1,93 @@
-# Adversarial estimation on graphs 
+# Adversarial estimation on graphs
 
-Adversarial estimator for graph structural models extends theoretical framework proposed by Kaji et al. (2023) to structural models defined on graphs (strategic communication games, peer effect models etc.). With graph data, we face unique challenges, in tabular datasets arbitrary row is usually regarded a single realization from joint distribution of exogenous and outcome variables, with graph data the graph itself is essentially a single random realization hence we need to create variability that would allow us to train the discriminative classifier, our current approach is to sample subgraphs from the ground truth and synthetic dataset and label them according to their origin to create necessary variability required for adversarial strategy, intuitive justification of this strategy would be something akin of ergodic theorem for signal transmission on networks, i.e. if individual generates a signal transmitting to his peers, given sufficient number of steps from the point of origin the effects will eventually dissipate. Currently implemented experiments thus rely on $k$-hop ego sampling from the ground truth and synthetic data. Further challenges are posed, by multiple equilibria of dynamic network models, lack of closed form asymptotics and the necessity to optimize discriminator architecture to suit different classes of structural models.
+Adversarial estimator for graph structural models extends the theoretical framework proposed by Kaji et al. (2023) to structural models defined on graphs (strategic communication games, peer-effect models, etc.). With graph data, the entire network is typically a single realization; to create variability for the discriminator we sample subgraphs from both the ground truth and the synthetic graph and label them by origin. Intuitively, local neighborhoods contain enough information about global structure for discrimination; our current implementation uses \$k\$-hop ego sampling. Additional challenges include multiple equilibria in dynamic network models, lack of closed-form asymptotics, and the need to tailor the discriminator architecture to the structural class.
 
-Below I briefly formalize the estimation problem:
+## Formal setup
 
-For ground truth dataset graph dataset $G = (X,Y,N,A)$ where:
-- X is a matrix of $n \times k$ exogenous characteristics of individual nodes, i.e. each node is associated with $k$ dimensional vector of features
-- Y is a matrix of $n \times l$ endogenous outcomes of individual nodes, i.e. each node is associated with $l$ dimensional vector of outcomes
-- N = \{0,...,n\} is set of node indices
-- A $n\times n$ is an adjacency matrix, symmetric and $A \in \{0,1\} ^{n\times n}$
+**Observed data.** Let \$G=(X,Y,N,A)\$ where:
 
-Structural model $m_{\theta}: R^{n \times k } \to R^{n \times l }$, $m$ is parametrized by unknown vector $\theta$.
+* \$X\in\mathbb{R}^{n\times k}\$ are exogenous node covariates (row \$i\$ is \$x\_i^\top\$).
+* \$Y\in\mathbb{R}^{n\times \ell}\$ are endogenous node outcomes (row \$i\$ is \$y\_i^\top\$).
+* \$N={1,\dots,n}\$ is the node index set.
+* \$A\in{0,1}^{n\times n}\$ is a symmetric adjacency matrix.
 
-Synthetic dataset $G(\theta)' = (X,Y',N,A)$ where $Y'=m_{\theta}(X,A, \theta)$
+We work with a **peer operator** \$P(A)\$ that **excludes self-links**:
 
-GNN discriminator $D: g_i \to [0,1]$, $g_i$ is a subgraph sampled from $G$ or $G'$. The discriminator is essentially a binary classifier which predicts if given sampled example belongs to ground truth or synthetic data.
-
-We search for $\theta^*$ such that:
 ```math
-  \theta^* \in \arg \min_{\theta}\max_{D} L_D(G'(\theta),G)
+P(A) = A - \mathrm{diag}(A)
 ```
-where the loss $L_D$ is some classification quality metric we want to minimize induced by the optimal classifier $D^*$, evaluated on the test set (e.g. accuracy or negative cross-entropy).
 
-## Reference:
-Kaji, T., Manresa, E., & Pouliot, G. (2023). An adversarial approach to structural estimation. Econometrica, 91(6), 2041-2063.
+Optionally, \$P(A)\$ may be row/degree-normalized; we only require \$\mathrm{diag}!\big(P(A)\big)=0\$.
+
+**Structural model (generator).** A structural mapping
+
+```math
+m_\theta:\ \big(X,\ P(A),\ Y^{(0)},\ \xi\big)\ \longmapsto\ Y' \in \mathbb{R}^{n\times \ell}
+```
+
+takes covariates, the peer operator, and an **initial outcome state** \$Y^{(0)}\$ (e.g., pre-interaction signals, baselines, or zeros) and returns simulated outcomes \$Y'\$. The innovation \$\xi\$ captures simulation randomness if present.
+
+* **Single-step (peer-to-peer, no self-loop):**
+
+```math
+Y' = m_\theta\!\Big(X,\ P(A)\,Y^{(0)},\ \xi\Big),
+```
+
+i.e., each \$y\_i'\$ depends on \$x\_i\$ and **peers’ initial outcomes** \${y\_j^{(0)}: j\in\mathcal{N}(i)}\$, but not on \$y\_i^{(0)}\$ directly.
+
+* **Multi-step propagation (optional):** for \$t=0,\dots,T-1\$,
+
+```math
+Y^{(t+1)} = m_\theta\!\Big(X,\ P(A)\,Y^{(t)},\ \xi^{(t)}\Big),
+\qquad Y' \equiv Y^{(T)}.
+```
+
+**Synthetic data.** Define \$G'(\theta)=(X,\ Y',\ N,\ A)\$ with \$Y'=m\_\theta(X,P(A),Y^{(0)},\xi)\$. Exogenous features and topology are held fixed so identification comes from matching the **distribution of outcomes over sampled subgraphs**.
+
+**Subgraph sampling.** Let \$\mathsf{S}\$ denote a randomized sampler (e.g., \$k\$-hop ego nets or rooted random-walk subgraphs). Sampling from \$G\$ induces \$p\_{\mathrm{data}}^{\mathsf{S}}\$ over subgraphs \$g\$; sampling from \$G'(\theta)\$ induces \$p\_{\theta}^{\mathsf{S}}\$.
+
+**Discriminator.** A GNN discriminator \$D\_\phi: g\mapsto\[0,1]\$ outputs the probability that \$g\$ came from \$p\_{\mathrm{data}}^{\mathsf{S}}\$.
+
+**Adversarial objective (Goodfellow-style).** Estimate \$\theta\$ by
+
+```math
+\min_{\theta}\ \max_{\phi}\ 
+\mathbb{E}_{g\sim p_{\mathrm{data}}^{\mathsf{S}}}\!\big[\log D_\phi(g)\big]
+\;+\;
+\mathbb{E}_{g\sim p_{\theta}^{\mathsf{S}}}\!\big[\log\big(1-D_\phi(g)\big)\big].
+```
+
+At the optimal discriminator this minimizes the Jensen–Shannon divergence between \$p\_{\mathrm{data}}^{\mathsf{S}}\$ and \$p\_{\theta}^{\mathsf{S}}\$. 
 
 ## Practical implementation
 
-To build and train GNN discriminator I use components from PyTorch Geometric module for deep learning on graphs. Generator is implemented with base class unified interface for sampling, both, ground truth and synthetic data are handled by the generator. Generator for ground truth data is essentially a sampling manager, while generator for synthetic data requires in addition mapping function defining the structural model, and instance of ground truth generator to ensure that exogenous characteristic of synthetic data are an exact copy of those in ground truth dataset. The synthetic generator also implements a generate_outcomes method to produce counterfactuals outcome values based on supplied structural parameters. Util functions are mostly for encapsulating the discriminator training and testing into the outside minimization objective. Default minimization method is Bayesian optimization with surrogate models, since it attacks complex black-box objectives without the need for analytical derivative and combines benefits of global search with benefits of local refinement.
+* **Discriminator.** Implement \$D\_\phi\$ with PyTorch Geometric. Use the same sampler \$\mathsf{S}\$ (e.g., \$k\$-hop ego nets or rooted random-walk subgraphs) for real and synthetic graphs to keep the target distribution fixed.
+* **Generators.**
 
-## linear_in_means_model.ipynb
-Is a test notebook showcasing the estimation on 2-parameter case where objective and optimization progress can be visualized.
+  * *Ground-truth generator*: sampling manager over \$G\$ to produce \$g\sim p\_{\mathrm{data}}^{\mathsf{S}}\$.
+  * *Synthetic generator*: wraps \$m\_\theta\$, reuses \$X\$, \$A\$ and the chosen initial state \$Y^{(0)}\$ (passed through the estimator), constructs \$P(A)\$ with zero diagonal, and exposes `generate_outcomes(θ)` for counterfactual simulation.
+* **Optimization.** Treat the outer problem as black-box in \$\theta\$. Bayesian optimization is a reasonable default; use **binary cross-entropy** from the objective above (not accuracy) as the scalar loss.
+
+## `linear_in_means_model.ipynb`
+
+A two-parameter testbed illustrating training curves and objective values. For linear-in-means,
+
+```math
+Y = (I-\rho P)^{-1}(X\beta+\varepsilon),
+```
+
+the no-self-loop restriction holds via \$P(A)\$ and invertibility requires
+
+```math
+|\rho| < 1/\lambda_{\max}(P).
+```
 
 ## Notes
-- As of now utils are specific to the discriminator use in linear in means experiment, but should be generalized.
-- Architecture of GNN for the experiment is chosen ad hoc since the identification is strong.
-- Linear experiment uses accuracy as a minimization objective, for more complex models more sensitive metrics are necessary.a
+
+* Utilities currently target the linear-in-means demo; they should generalize by swapping \$m\_\theta\$ and the sampler \$\mathsf{S}\$.
+* The demo’s GNN for \$D\_\phi\$ is ad hoc; strong identification often tolerates simple discriminators.
+* Prefer cross-entropy over accuracy for the outer objective.
+
+## Reference
+
+Kaji, T., Manresa, E., & Pouliot, G. (2023). *An adversarial approach to structural estimation*. **Econometrica**, 91(6), 2041–2063.

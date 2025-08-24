@@ -31,9 +31,9 @@ def create_dataset(real_subgraphs, synthetic_subgraphs):
     return dataset
 
 
-def evaluate_discriminator(model, loader, device):
+def evaluate_discriminator(model, loader, device, metric="neg_logloss"):
     """
-    Evaluate the discriminator model.
+    Evaluate the discriminator model according to a specified metric.
 
     Parameters:
     -----------
@@ -43,30 +43,50 @@ def evaluate_discriminator(model, loader, device):
         DataLoader containing evaluation data
     device : torch.device
         Device to run computations on
+    metric : str
+        Metric to compute. Supported values are ``"neg_logloss"``,
+        ``"accuracy"`` and ``"neg_brier_score"``.
 
     Returns:
     --------
     float
-        Negative cross-entropy (mean over the loader, multiplied by -1).
-        Higher values indicate worse discriminator performance.
+        Evaluation value according to ``metric``. For ``"accuracy"`` the
+        value is the standard accuracy score. For the other options the value
+        is negated so that lower values correspond to better discriminator
+        performance; hence they can be directly minimized by the outer
+        optimization routine.
     """
+
+    from sklearn.metrics import accuracy_score, brier_score_loss, log_loss
+
     model.eval()
-    total = 0
-    total_ce = 0.0
-    criterion = nn.CrossEntropyLoss(reduction='mean')
+    y_true = []
+    y_pred = []
+    y_prob = []
 
     with torch.no_grad():
         for batch in loader:
             batch = batch.to(device)
             outputs = model(batch)
-            loss = criterion(outputs, batch.label) 
-            bs = batch.label.size(0)
-            total_ce += loss.item() * bs         
-            total += bs
+            probs = torch.softmax(outputs, dim=1)[:, 1]
+            preds = outputs.argmax(dim=1)
+            labels = batch.label
+            y_true.extend(labels.cpu().numpy())
+            y_pred.extend(preds.cpu().numpy())
+            y_prob.extend(probs.cpu().numpy())
 
-    avg_ce = (total_ce / total) if total > 0 else float("nan")
-    negative_cross_entropy = -avg_ce
-    return negative_cross_entropy
+    if metric == "neg_logloss":
+        value = -log_loss(y_true, y_prob, labels=[0, 1])
+    elif metric == "accuracy":
+        value = accuracy_score(y_true, y_pred)
+    elif metric == "neg_brier_score":
+        value = -brier_score_loss(y_true, y_prob)
+    else:
+        raise ValueError(
+            "metric must be one of 'neg_logloss', 'accuracy', 'neg_brier_score'"
+        )
+
+    return value
 
 
 def objective_function(
@@ -74,17 +94,22 @@ def objective_function(
     ground_truth_generator,
     synthetic_generator,
     discriminator_factory,
-    m=500,
+    m=1500,
     num_epochs=5,
+    k_hops=1,
     verbose=True,
+    metric="neg_logloss",
+    batch_size=256,
+    lr=0.01,
+    discriminator_params=None,
 ):
     """
     Objective function for parameter estimation.
 
-    For candidate parameters theta, generates synthetic outcomes, trains a GNN
-    discriminator to distinguish between real and synthetic data, and returns
-    the negative cross-entropy on the test set (objective to minimize, i.e.,
-    minimizing -CE is equivalent to maximizing CE).
+    For candidate parameters ``theta``, generates synthetic outcomes, trains a
+    GNN discriminator to distinguish between real and synthetic data, and
+    evaluates the discriminator on a held-out split using the specified
+    ``metric``.
 
     Parameters:
     -----------
@@ -100,13 +125,25 @@ def objective_function(
         Number of nodes to sample for subgraphs
     num_epochs : int
         Number of epochs to train the discriminator
+    k_hops : int, optional
+        Radius of the ego network sampled around each target node.
     verbose : bool
         Whether to print progress information
+    metric : str
+        Evaluation metric passed to ``evaluate_discriminator``. Supported
+        values are ``"neg_logloss"``, ``"accuracy"`` and
+        ``"neg_brier_score"``.
+    batch_size : int, optional
+        Batch size used by the ``DataLoader``.
+    lr : float, optional
+        Learning rate for the optimizer.
+    discriminator_params : dict, optional
+        Additional keyword arguments forwarded to ``discriminator_factory``.
 
     Returns:
     --------
     float
-        Negative cross-entropy on the test split (objective to minimize).
+        Value of ``metric`` on the test split (objective to minimize).
     """
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -116,19 +153,20 @@ def objective_function(
     n = ground_truth_generator.num_nodes
     sampled_nodes = random.sample(range(n), min(m, n))
 
-    real_subgraphs = ground_truth_generator.sample_subgraphs(sampled_nodes)
-    synthetic_subgraphs = synthetic_generator.sample_subgraphs(sampled_nodes)
+    real_subgraphs = ground_truth_generator.sample_subgraphs(sampled_nodes, k_hops=k_hops)
+    synthetic_subgraphs = synthetic_generator.sample_subgraphs(sampled_nodes, k_hops=k_hops)
 
     dataset = create_dataset(real_subgraphs, synthetic_subgraphs)
 
     train_data, test_data = train_test_split(dataset, test_size=0.3, random_state=42)
-    train_loader = DataLoader(train_data, batch_size=256, shuffle=True)
-    test_loader = DataLoader(test_data, batch_size=256, shuffle=False)
+    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False)
 
     input_dim = real_subgraphs[0].x.shape[1]
-    model = discriminator_factory(input_dim).to(device)
+    discriminator_params = discriminator_params or {}
+    model = discriminator_factory(input_dim, **discriminator_params).to(device)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss()
 
     model.train()
@@ -145,9 +183,9 @@ def objective_function(
         if verbose:
             print(f"Epoch {epoch}, Loss: {total_loss/len(train_loader):.4f}")
 
-    test_objective = evaluate_discriminator(model, test_loader, device)
+    test_objective = evaluate_discriminator(model, test_loader, device, metric)
 
     if verbose:
-        print(f"Test objective (-CE) for theta={theta}: {test_objective:.4f}")
+        print(f"Test objective ({metric}) for theta={theta}: {test_objective:.4f}")
 
     return test_objective
