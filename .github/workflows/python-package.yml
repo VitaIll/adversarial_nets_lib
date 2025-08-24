@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest]
+        os: [windows-latest, ubuntu-latest]
         python-version: ["3.9", "3.10", "3.11"]
     steps:
       - uses: actions/checkout@v4
