@@ -64,6 +64,11 @@ class GeneratorBase(ABC):
             x_sub = torch.tensor(self.x[nodes], dtype=torch.float)
             y_sub = torch.tensor(self.y[nodes], dtype=torch.float)
             
+            if x_sub.dim() == 1:
+                x_sub = x_sub.unsqueeze(1)
+            if y_sub.dim() == 1:
+                y_sub = y_sub.unsqueeze(1)
+                
             features = torch.cat([x_sub, y_sub], dim=1)
             
             edge_index = torch.tensor(list(subgraph.edges), dtype=torch.long).t().contiguous()

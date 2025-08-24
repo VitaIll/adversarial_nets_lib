@@ -94,7 +94,7 @@ def objective_function(
     ground_truth_generator,
     synthetic_generator,
     discriminator_factory,
-    m=500,
+    m=1500,
     num_epochs=5,
     verbose=True,
     metric="neg_logloss",
