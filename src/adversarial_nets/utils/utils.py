@@ -96,8 +96,12 @@ def objective_function(
     discriminator_factory,
     m=1500,
     num_epochs=5,
+    k_hops=1,
     verbose=True,
     metric="neg_logloss",
+    batch_size=256,
+    lr=0.01,
+    discriminator_params=None,
 ):
     """
     Objective function for parameter estimation.
@@ -121,12 +125,20 @@ def objective_function(
         Number of nodes to sample for subgraphs
     num_epochs : int
         Number of epochs to train the discriminator
+    k_hops : int, optional
+        Radius of the ego network sampled around each target node.
     verbose : bool
         Whether to print progress information
     metric : str
         Evaluation metric passed to ``evaluate_discriminator``. Supported
         values are ``"neg_logloss"``, ``"accuracy"`` and
         ``"neg_brier_score"``.
+    batch_size : int, optional
+        Batch size used by the ``DataLoader``.
+    lr : float, optional
+        Learning rate for the optimizer.
+    discriminator_params : dict, optional
+        Additional keyword arguments forwarded to ``discriminator_factory``.
 
     Returns:
     --------
@@ -141,19 +153,20 @@ def objective_function(
     n = ground_truth_generator.num_nodes
     sampled_nodes = random.sample(range(n), min(m, n))
 
-    real_subgraphs = ground_truth_generator.sample_subgraphs(sampled_nodes)
-    synthetic_subgraphs = synthetic_generator.sample_subgraphs(sampled_nodes)
+    real_subgraphs = ground_truth_generator.sample_subgraphs(sampled_nodes, k_hops=k_hops)
+    synthetic_subgraphs = synthetic_generator.sample_subgraphs(sampled_nodes, k_hops=k_hops)
 
     dataset = create_dataset(real_subgraphs, synthetic_subgraphs)
 
     train_data, test_data = train_test_split(dataset, test_size=0.3, random_state=42)
-    train_loader = DataLoader(train_data, batch_size=256, shuffle=True)
-    test_loader = DataLoader(test_data, batch_size=256, shuffle=False)
+    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False)
 
     input_dim = real_subgraphs[0].x.shape[1]
-    model = discriminator_factory(input_dim).to(device)
+    discriminator_params = discriminator_params or {}
+    model = discriminator_factory(input_dim, **discriminator_params).to(device)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss()
 
     model.train()
