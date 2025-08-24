@@ -56,8 +56,35 @@ class AdversarialEstimator:
         self.gp_params = gp_params or {}
         self.metric = metric
         
-    def estimate(self, m, num_epochs=20, verbose=True):
-        """Run the adversarial estimation."""
+    def estimate(
+            self,
+            m,
+            num_epochs=20,
+            k_hops=1,
+            verbose=True,
+            discriminator_params=None,
+            training_params=None,
+        ):
+        """Run the adversarial estimation.
+
+        Parameters
+        ----------
+        m : int
+            Number of nodes to sample for subgraphs.
+        num_epochs : int, optional
+            Number of epochs to train the discriminator.
+        k_hops : int, optional
+            Radius of the ego network sampled around each target node.
+        verbose : bool, optional
+            Whether to print progress information.
+        discriminator_params : dict, optional
+            Additional keyword arguments forwarded to ``discriminator_factory``.
+        training_params : dict, optional
+            Keyword arguments forwarded to :func:`objective_function` to
+            control the training routine (e.g. ``batch_size`` or ``lr``).
+        """
+
+        training_params = training_params or {}
 
         def objective_with_generator(theta):
             return objective_function(
@@ -66,9 +93,12 @@ class AdversarialEstimator:
                 self.synthetic_generator,
                 m=m,
                 num_epochs=num_epochs,
+                k_hops=k_hops,
                 discriminator_factory=self.discriminator_factory,
+                discriminator_params=discriminator_params,
                 verbose=verbose,
                 metric=self.metric,
+                **training_params,
             )
         
         gp_options = {

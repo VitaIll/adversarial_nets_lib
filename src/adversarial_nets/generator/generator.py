@@ -35,51 +35,61 @@ class GeneratorBase(ABC):
         
         self.G = nx.from_numpy_array(adjacency)
     
-    def sample_subgraphs(self, node_ids):
-        """
-        Extract induced subgraphs centered on specified nodes.
-        
-        For each node in node_ids, creates a subgraph containing the node and all
-        its neighbors, with features and outcomes preserved from the original graph.
-        
-        Parameters:
-        -----------
+    def sample_subgraphs(self, node_ids, k_hops=1):
+        """Extract ego subgraphs centered on specified nodes.
+
+        For each node in ``node_ids`` an ego network with radius ``k_hops``
+        is extracted from the original graph. Node features and outcomes are
+        preserved from the original graph and combined into a
+        :class:`~torch_geometric.data.Data` object.
+
+        Parameters
+        ----------
         node_ids : list
-            List of node indices to sample subgraphs from
-        
-        Returns:
-        --------
+            List of node indices to sample subgraphs from.
+        k_hops : int, optional
+            Radius of the ego network around each ``node``. ``k_hops=1``
+            reduces to the previous behaviour of including only immediate
+            neighbours. Defaults to ``1``.
+
+        Returns
+        -------
         list
-            List of PyTorch Geometric Data objects representing subgraphs
+            List of PyTorch Geometric ``Data`` objects representing subgraphs.
         """
         subgraphs = []
         for node in node_ids:
-           
-            nodes = [node] + list(self.G.neighbors(node))
-            subgraph = self.G.subgraph(nodes).copy()
-            
+            # Use networkx's ego_graph to obtain nodes within ``k_hops``
+            subgraph = nx.ego_graph(self.G, node, radius=k_hops).copy()
+
+            nodes = list(subgraph.nodes)
             mapping = {n: i for i, n in enumerate(nodes)}
             subgraph = nx.relabel_nodes(subgraph, mapping)
-            
+
             x_sub = torch.tensor(self.x[nodes], dtype=torch.float)
             y_sub = torch.tensor(self.y[nodes], dtype=torch.float)
-            
+
             if x_sub.dim() == 1:
                 x_sub = x_sub.unsqueeze(1)
             if y_sub.dim() == 1:
                 y_sub = y_sub.unsqueeze(1)
-                
+
             features = torch.cat([x_sub, y_sub], dim=1)
-            
-            edge_index = torch.tensor(list(subgraph.edges), dtype=torch.long).t().contiguous()
+
+            edge_index = (
+                torch.tensor(list(subgraph.edges), dtype=torch.long).t().contiguous()
+            )
             if edge_index.numel() > 0:
                 edge_index = torch.cat([edge_index, edge_index[[1, 0], :]], dim=1)
             else:
                 edge_index = torch.empty((2, 0), dtype=torch.long)
-                
-            data = Data(x=features, edge_index=edge_index, 
-                        original_nodes=nodes,  
-                        original_graph=subgraph)  
+
+            data = Data(
+                x=features,
+                edge_index=edge_index,
+                original_nodes=nodes,
+                original_graph=subgraph,
+            )
             subgraphs.append(data)
 
         return subgraphs
