@@ -6,22 +6,33 @@ on:
       - 'v*'
   release:
     types: [published]
+  workflow_dispatch:
 
 jobs:
-  build:
+  build-and-publish:
     runs-on: ubuntu-latest
+    # Prevent double-publish if both tag and release fire
+    concurrency: publish-${{ github.ref }}
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
-      - name: Build distribution
+
+      - name: Build sdist & wheel
         run: |
-          python -m pip install --upgrade pip build twine
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade build 'twine>=6.1.0' 'packaging>=24.2'
           python -m build
-          twine check dist/*
+          python -m twine check dist/*
+
+      - name: Show wheel METADATA header (debug)
+        run: unzip -p dist/*.whl '**/METADATA' | sed -n '1,20p'
+
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.8.11
+        uses: pypa/gh-action-pypi-publish@release/v1
         with:
           user: __token__
           password: ${{ secrets.PYPI_API_TOKEN }}
