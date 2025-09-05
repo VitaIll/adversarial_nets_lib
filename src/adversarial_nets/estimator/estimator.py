@@ -1,4 +1,6 @@
 from skopt import gp_minimize
+import optuna
+import random
 from ..generator.generator import GroundTruthGenerator, SyntheticGenerator
 from ..utils.utils import objective_function
 
@@ -55,6 +57,8 @@ class AdversarialEstimator:
         self.discriminator_factory = discriminator_factory
         self.gp_params = gp_params or {}
         self.metric = metric
+        self.calibrated_params = None
+        self.calibration_study = None
         
     def estimate(
             self,
@@ -118,5 +122,79 @@ class AdversarialEstimator:
             self.bounds,
             **gp_options
         )
-        
+
         return result
+
+    def callibrate(
+            self,
+            search_space,
+            optimizer_params,
+            metric_name,
+            k=10,
+            m=1500,
+            num_epochs=5,
+            k_hops=1,
+            verbose=True,
+        ):
+        """Calibrate discriminator hyperparameters using Optuna.
+
+        Parameters
+        ----------
+        search_space : dict
+            Dictionary defining Optuna search space. Expected keys
+            ``"discriminator_params"`` and ``"training_params"`` each mapping
+            parameter names to callables ``lambda trial: ...``.
+        optimizer_params : dict
+            Parameters for :func:`optuna.create_study`. May include
+            ``n_trials`` to specify the number of optimization trials.
+        metric_name : str
+            Calibration metric to minimize (passed to
+            :func:`evaluate_discriminator`).
+        k : int, optional
+            Number of randomly drawn ``theta`` values per trial.
+        m, num_epochs, k_hops : int, optional
+            Arguments controlling subgraph sampling and discriminator
+            training. They can be overridden by sampled training parameters.
+        verbose : bool, optional
+            Whether to print progress information.
+        """
+
+        n_trials = optimizer_params.pop("n_trials", 50)
+        study = optuna.create_study(direction="minimize", **optimizer_params)
+
+        def objective(trial):
+            disc_search = search_space.get("discriminator_params", {})
+            train_search = search_space.get("training_params", {})
+
+            disc_params = {name: sampler(trial) for name, sampler in disc_search.items()}
+            train_params = {name: sampler(trial) for name, sampler in train_search.items()}
+
+            m_trial = train_params.pop("m", m)
+            num_epochs_trial = train_params.pop("num_epochs", num_epochs)
+            k_hops_trial = train_params.pop("k_hops", k_hops)
+
+            performances = []
+            for _ in range(k):
+                theta = [random.uniform(low, high) for (low, high) in self.bounds]
+                perf = objective_function(
+                    theta,
+                    self.ground_truth_generator,
+                    self.synthetic_generator,
+                    discriminator_factory=self.discriminator_factory,
+                    m=m_trial,
+                    num_epochs=num_epochs_trial,
+                    k_hops=k_hops_trial,
+                    verbose=verbose,
+                    metric=metric_name,
+                    discriminator_params=disc_params,
+                    **train_params,
+                )
+                performances.append(perf)
+            return float(sum(performances) / len(performances))
+
+        study.optimize(objective, n_trials=n_trials)
+
+        self.calibrated_params = study.best_params
+        self.calibration_study = study
+
+        return None
