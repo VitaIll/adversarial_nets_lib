@@ -1,6 +1,7 @@
 from skopt import gp_minimize
 import optuna
 import random
+from tqdm import tqdm
 from ..generator.generator import GroundTruthGenerator, SyntheticGenerator
 from ..utils.utils import objective_function
 
@@ -134,7 +135,7 @@ class AdversarialEstimator:
             m=1500,
             num_epochs=5,
             k_hops=1,
-            verbose=True,
+            discriminator_verbose=False,
         ):
         """Calibrate discriminator hyperparameters using Optuna.
 
@@ -155,12 +156,13 @@ class AdversarialEstimator:
         m, num_epochs, k_hops : int, optional
             Arguments controlling subgraph sampling and discriminator
             training. They can be overridden by sampled training parameters.
-        verbose : bool, optional
-            Whether to print progress information.
+        discriminator_verbose : bool, optional
+            Whether to print discriminator training progress.
         """
 
         n_trials = optimizer_params.pop("n_trials", 50)
         study = optuna.create_study(direction="minimize", **optimizer_params)
+        pbar = tqdm(total=n_trials * k, desc="Calibrating")
 
         def objective(trial):
             disc_search = search_space.get("discriminator_params", {})
@@ -184,15 +186,17 @@ class AdversarialEstimator:
                     m=m_trial,
                     num_epochs=num_epochs_trial,
                     k_hops=k_hops_trial,
-                    verbose=verbose,
+                    verbose=discriminator_verbose,
                     metric=metric_name,
                     discriminator_params=disc_params,
                     **train_params,
                 )
                 performances.append(perf)
+                pbar.update(1)
             return float(sum(performances) / len(performances))
 
-        study.optimize(objective, n_trials=n_trials)
+        study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+        pbar.close()
 
         self.calibrated_params = study.best_params
         self.calibration_study = study
