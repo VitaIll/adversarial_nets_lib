@@ -1,7 +1,7 @@
 from skopt import gp_minimize
 import optuna
 import random
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from ..generator.generator import GroundTruthGenerator, SyntheticGenerator
 from ..utils.utils import objective_function
 
@@ -98,22 +98,22 @@ class AdversarialEstimator:
 
         if self.calibrated_params:
             calib_disc = self.calibrated_params.get("discriminator_params", {})
-            calib_train = self.calibrated_params.get("training_params", {})
+            calib_train = self.calibrated_params.get("training_params", {}).copy()
         else:
             calib_disc, calib_train = {}, {}
 
-        # Use calibrated values for top-level parameters if not provided
-        if m is None:
-            m = calib_train.pop("m", None)
-        if num_epochs is None:
-            num_epochs = calib_train.pop("num_epochs", 20)
-        if k_hops is None:
-            k_hops = calib_train.pop("k_hops", 1)
+        m = calib_train.pop("m", m)
+        num_epochs = calib_train.pop("num_epochs", num_epochs)
+        k_hops = calib_train.pop("k_hops", k_hops)
 
         if m is None:
             raise ValueError(
                 "Parameter m must be specified either directly or via calibrated params."
             )
+        if num_epochs is None:
+            num_epochs = 20
+        if k_hops is None:
+            k_hops = 1
 
         discriminator_params = {**calib_disc, **discriminator_params}
         training_params = {**calib_train, **training_params}
@@ -155,10 +155,11 @@ class AdversarialEstimator:
         gp_options.update(self.gp_params)
 
         total_calls = gp_options.get('n_calls', 0)
-        pbar = tqdm(total=total_calls, desc="Estimating")
+        pbar = tqdm(total=total_calls, desc="Estimating") if verbose else None
 
         def _callback(res):
-            pbar.update(1)
+            if pbar is not None:
+                pbar.update(1)
 
         result = gp_minimize(
             objective_with_generator,
@@ -167,7 +168,8 @@ class AdversarialEstimator:
             **gp_options
         )
 
-        pbar.close()
+        if pbar is not None:
+            pbar.close()
 
         return result
 
