@@ -66,6 +66,7 @@ class AdversarialEstimator:
             m=None,
             num_epochs=None,
             k_hops=None,
+            num_runs=1,
             verbose=True,
             discriminator_params=None,
             training_params=None,
@@ -83,6 +84,9 @@ class AdversarialEstimator:
         k_hops : int, optional
             Radius of the ego network sampled around each target node. Falls
             back to the calibrated value or ``1`` if unspecified.
+        num_runs : int, optional
+            Number of independent training/evaluation repetitions per
+            objective evaluation. Results are averaged across runs.
         verbose : bool, optional
             Whether to print progress information during discriminator
             training.
@@ -102,9 +106,13 @@ class AdversarialEstimator:
         else:
             calib_disc, calib_train = {}, {}
 
-        m = calib_train.pop("m", m)
-        num_epochs = calib_train.pop("num_epochs", num_epochs)
-        k_hops = calib_train.pop("k_hops", k_hops)
+        discriminator_params = {**calib_disc, **discriminator_params}
+        training_params = {**calib_train, **training_params}
+
+        m = training_params.pop("m", m)
+        num_epochs = training_params.pop("num_epochs", num_epochs)
+        k_hops = training_params.pop("k_hops", k_hops)
+        num_runs = training_params.pop("num_runs", num_runs)
 
         if m is None:
             raise ValueError(
@@ -114,13 +122,12 @@ class AdversarialEstimator:
             num_epochs = 20
         if k_hops is None:
             k_hops = 1
-
-        discriminator_params = {**calib_disc, **discriminator_params}
-        training_params = {**calib_train, **training_params}
+        if num_runs is None:
+            num_runs = 1
 
         print(
             "Starting estimation with parameters:\n"
-            f"m={m}, num_epochs={num_epochs}, k_hops={k_hops}\n"
+            f"m={m}, num_epochs={num_epochs}, k_hops={k_hops}, num_runs={num_runs}\n"
             f"discriminator_params={discriminator_params}\n"
             f"training_params={training_params}"
         )
@@ -137,6 +144,7 @@ class AdversarialEstimator:
                 discriminator_params=discriminator_params,
                 verbose=verbose,
                 metric=self.metric,
+                num_runs=num_runs,
                 **training_params
             )
         
@@ -180,6 +188,7 @@ class AdversarialEstimator:
             m=1500,
             num_epochs=5,
             k_hops=1,
+            num_runs=1,
             discriminator_verbose=False,
             direction="minimize",
         ):
@@ -199,9 +208,11 @@ class AdversarialEstimator:
             :func:`evaluate_discriminator`).
         k : int, optional
             Number of randomly drawn ``theta`` values per trial.
-        m, num_epochs, k_hops : int, optional
-            Arguments controlling subgraph sampling and discriminator
-            training. They can be overridden by sampled training parameters.
+        m, num_epochs, k_hops, num_runs : int, optional
+            Arguments controlling subgraph sampling, discriminator training
+            and the number of repeated trainings/evaluations per objective
+            computation. They can be overridden by sampled training
+            parameters.
         discriminator_verbose : bool, optional
             Whether to print discriminator training progress.
         direction : {"minimize", "maximize"}, optional
@@ -222,6 +233,7 @@ class AdversarialEstimator:
             m_trial = train_params.pop("m", m)
             num_epochs_trial = train_params.pop("num_epochs", num_epochs)
             k_hops_trial = train_params.pop("k_hops", k_hops)
+            num_runs_trial = train_params.pop("num_runs", num_runs)
 
             performances = []
             for _ in range(k):
@@ -237,6 +249,7 @@ class AdversarialEstimator:
                     verbose=discriminator_verbose,
                     metric=metric_name,
                     discriminator_params=disc_params,
+                    num_runs=num_runs_trial,
                     **train_params
                 )
                 performances.append(perf)
