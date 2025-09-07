@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
-from torch_geometric.loader import DataLoader 
+from torch_geometric.loader import DataLoader
 import random
+import numpy as np
 from sklearn.model_selection import train_test_split
 
 
@@ -32,11 +33,10 @@ def create_dataset(real_subgraphs, synthetic_subgraphs):
 
 
 def evaluate_discriminator(model, loader, device, metric="neg_logloss"):
-    """
-    Evaluate the discriminator model according to a specified metric.
+    """Evaluate the discriminator model according to a specified metric.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     model : torch.nn.Module
         The GNN discriminator model
     loader : torch_geometric.data.DataLoader
@@ -45,19 +45,21 @@ def evaluate_discriminator(model, loader, device, metric="neg_logloss"):
         Device to run computations on
     metric : str
         Metric to compute. Supported values are ``"neg_logloss"``,
-        ``"accuracy"`` and ``"neg_brier_score"``.
+        ``"accuracy"``, ``"neg_brier_score"``, ``"ace"`` (average calibration
+        error) and ``"ece"`` (expected calibration error).
 
-    Returns:
-    --------
+    Returns
+    -------
     float
-        Evaluation value according to ``metric``. For ``"accuracy"`` the
-        value is the standard accuracy score. For the other options the value
-        is negated so that lower values correspond to better discriminator
+        Evaluation value according to ``metric``. For ``"accuracy"`` the value
+        is the standard accuracy score. For the other options the value is
+        defined so that lower values correspond to better discriminator
         performance; hence they can be directly minimized by the outer
         optimization routine.
     """
 
     from sklearn.metrics import accuracy_score, brier_score_loss, log_loss
+    from sklearn.calibration import calibration_curve
 
     model.eval()
     y_true = []
@@ -75,19 +77,33 @@ def evaluate_discriminator(model, loader, device, metric="neg_logloss"):
             y_pred.extend(preds.cpu().numpy())
             y_prob.extend(probs.cpu().numpy())
 
+    y_true = np.asarray(y_true)
+    y_prob = np.asarray(y_prob)
+
     if metric == "neg_logloss":
         value = -log_loss(y_true, y_prob, labels=[0, 1])
     elif metric == "accuracy":
         value = accuracy_score(y_true, y_pred)
     elif metric == "neg_brier_score":
         value = -brier_score_loss(y_true, y_prob)
+    elif metric in {"ace", "ece"}:
+        prob_true, prob_pred = calibration_curve(y_true, y_prob, n_bins=10, strategy="uniform")
+        bins = np.linspace(0.0, 1.0, 11)
+        binids = np.digitize(y_prob, bins) - 1
+        bin_total = np.bincount(binids, minlength=10)
+        nonzero = bin_total > 0
+        diff = np.abs(prob_true - prob_pred)
+        if metric == "ace":
+            value = diff.mean()
+        else:
+            weights = bin_total[nonzero] / len(y_prob)
+            value = np.sum(diff * weights)
     else:
         raise ValueError(
-            "metric must be one of 'neg_logloss', 'accuracy', 'neg_brier_score'"
+            "metric must be one of 'neg_logloss', 'accuracy', 'neg_brier_score', 'ace', 'ece'",
         )
 
     return value
-
 
 def objective_function(
     theta,
@@ -102,6 +118,7 @@ def objective_function(
     batch_size=256,
     lr=0.01,
     discriminator_params=None,
+    seeds=None
 ):
     """
     Objective function for parameter estimation.
@@ -139,6 +156,10 @@ def objective_function(
         Learning rate for the optimizer.
     discriminator_params : dict, optional
         Additional keyword arguments forwarded to ``discriminator_factory``.
+    seeds : sequence of int, optional
+        Optional seeds ``(real, synthetic, training)``. If ``None`` (default),
+        fresh seeds are drawn for each call ensuring different subsamples and
+        discriminator initialization.
 
     Returns:
     --------
@@ -151,10 +172,29 @@ def objective_function(
     synthetic_generator.generate_outcomes(theta)
 
     n = ground_truth_generator.num_nodes
-    sampled_nodes = random.sample(range(n), min(m, n))
+    # ensure we can draw disjoint samples for real and synthetic data
+    k = min(m, n // 2)
 
-    real_subgraphs = ground_truth_generator.sample_subgraphs(sampled_nodes, k_hops=k_hops)
-    synthetic_subgraphs = synthetic_generator.sample_subgraphs(sampled_nodes, k_hops=k_hops)
+    sys_rng = random.SystemRandom()
+    if seeds is None:
+        seeds = [sys_rng.randrange(2**32) for _ in range(3)]
+    elif len(seeds) < 3:
+        seeds = list(seeds) + [sys_rng.randrange(2**32) for _ in range(3 - len(seeds))]
+
+    rng_real = random.Random(seeds[0])
+    rng_synth = random.Random(seeds[1])
+
+    # Sample disjoint node sets
+    real_nodes = rng_real.sample(range(n), k)
+    remaining_nodes = list(set(range(n)) - set(real_nodes))
+    synthetic_nodes = rng_synth.sample(remaining_nodes, k)
+
+    real_subgraphs = ground_truth_generator.sample_subgraphs(real_nodes, k_hops=k_hops)
+    synthetic_subgraphs = synthetic_generator.sample_subgraphs(synthetic_nodes, k_hops=k_hops)
+
+    train_seed = seeds[2]
+    torch.manual_seed(train_seed)
+    np.random.seed(train_seed)
 
     dataset = create_dataset(real_subgraphs, synthetic_subgraphs)
 
