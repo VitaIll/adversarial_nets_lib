@@ -118,7 +118,8 @@ def objective_function(
     batch_size=256,
     lr=0.01,
     discriminator_params=None,
-    seeds=None
+    seeds=None,
+    num_runs=1,
 ):
     """
     Objective function for parameter estimation.
@@ -160,72 +161,88 @@ def objective_function(
         Optional seeds ``(real, synthetic, training)``. If ``None`` (default),
         fresh seeds are drawn for each call ensuring different subsamples and
         discriminator initialization.
+    num_runs : int, optional
+        Number of independent training/evaluation repetitions using fresh
+        samples. The final objective is the average over these runs.
 
     Returns:
     --------
     float
-        Value of ``metric`` on the test split (objective to minimize).
+        Average value of ``metric`` on the test split across ``num_runs``
+        different training/evaluation cycles (objective to minimize).
     """
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    synthetic_generator.generate_outcomes(theta)
-
-    n = ground_truth_generator.num_nodes
-    # ensure we can draw disjoint samples for real and synthetic data
-    k = min(m, n // 2)
-
     sys_rng = random.SystemRandom()
-    if seeds is None:
-        seeds = [sys_rng.randrange(2**32) for _ in range(3)]
-    elif len(seeds) < 3:
+    if seeds is not None:
         seeds = list(seeds) + [sys_rng.randrange(2**32) for _ in range(3 - len(seeds))]
 
-    rng_real = random.Random(seeds[0])
-    rng_synth = random.Random(seeds[1])
+    def single_run(run_seeds):
+        synthetic_generator.generate_outcomes(theta)
 
-    # Sample disjoint node sets
-    real_nodes = rng_real.sample(range(n), k)
-    remaining_nodes = list(set(range(n)) - set(real_nodes))
-    synthetic_nodes = rng_synth.sample(remaining_nodes, k)
+        n = ground_truth_generator.num_nodes
+        # ensure we can draw disjoint samples for real and synthetic data
+        k = min(m, n // 2)
 
-    real_subgraphs = ground_truth_generator.sample_subgraphs(real_nodes, k_hops=k_hops)
-    synthetic_subgraphs = synthetic_generator.sample_subgraphs(synthetic_nodes, k_hops=k_hops)
+        if run_seeds is None:
+            run_seeds = [sys_rng.randrange(2**32) for _ in range(3)]
 
-    train_seed = seeds[2]
-    torch.manual_seed(train_seed)
-    np.random.seed(train_seed)
+        rng_real = random.Random(run_seeds[0])
+        rng_synth = random.Random(run_seeds[1])
 
-    dataset = create_dataset(real_subgraphs, synthetic_subgraphs)
+        # Sample disjoint node sets
+        real_nodes = rng_real.sample(range(n), k)
+        remaining_nodes = list(set(range(n)) - set(real_nodes))
+        synthetic_nodes = rng_synth.sample(remaining_nodes, k)
 
-    train_data, test_data = train_test_split(dataset, test_size=0.3, random_state=42)
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False)
+        real_subgraphs = ground_truth_generator.sample_subgraphs(real_nodes, k_hops=k_hops)
+        synthetic_subgraphs = synthetic_generator.sample_subgraphs(synthetic_nodes, k_hops=k_hops)
 
-    input_dim = real_subgraphs[0].x.shape[1]
-    discriminator_params = discriminator_params or {}
-    model = discriminator_factory(input_dim, **discriminator_params).to(device)
+        train_seed = run_seeds[2]
+        torch.manual_seed(train_seed)
+        np.random.seed(train_seed)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.CrossEntropyLoss()
+        dataset = create_dataset(real_subgraphs, synthetic_subgraphs)
 
-    model.train()
-    for epoch in range(num_epochs):
-        total_loss = 0.0
-        for batch in train_loader:
-            batch = batch.to(device)
-            outputs = model(batch)
-            loss = criterion(outputs, batch.label)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
+        train_data, test_data = train_test_split(dataset, test_size=0.3, random_state=42)
+        train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+        test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False)
+
+        input_dim = real_subgraphs[0].x.shape[1]
+        disc_params = discriminator_params or {}
+        model = discriminator_factory(input_dim, **disc_params).to(device)
+
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        criterion = nn.CrossEntropyLoss()
+
+        model.train()
+        for epoch in range(num_epochs):
+            total_loss = 0.0
+            for batch in train_loader:
+                batch = batch.to(device)
+                outputs = model(batch)
+                loss = criterion(outputs, batch.label)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                total_loss += loss.item()
+            if verbose:
+                print(f"Epoch {epoch}, Loss: {total_loss/len(train_loader):.4f}")
+
+        return evaluate_discriminator(model, test_loader, device, metric)
+
+    results = []
+    for i in range(num_runs):
+        if seeds is None:
+            run_seeds = None
+        else:
+            run_seeds = [(s + i) % (2**32) for s in seeds]
+        test_objective = single_run(run_seeds)
+        results.append(test_objective)
         if verbose:
-            print(f"Epoch {epoch}, Loss: {total_loss/len(train_loader):.4f}")
+            print(
+                f"Run {i + 1}/{num_runs} test objective ({metric}) for theta={theta}: {test_objective:.4f}"
+            )
 
-    test_objective = evaluate_discriminator(model, test_loader, device, metric)
-
-    if verbose:
-        print(f"Test objective ({metric}) for theta={theta}: {test_objective:.4f}")
-
-    return test_objective
+    return float(sum(results) / len(results))
