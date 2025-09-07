@@ -205,7 +205,9 @@ def objective_function(
 
         dataset = create_dataset(real_subgraphs, synthetic_subgraphs)
 
-        train_data, test_data = train_test_split(dataset, test_size=0.3, random_state=42)
+        train_data, test_data = train_test_split(
+            dataset, test_size=0.3, random_state=train_seed
+        )
         train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
         test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False)
 
