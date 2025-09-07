@@ -95,9 +95,6 @@ class AdversarialEstimator:
 
         discriminator_params = discriminator_params or {}
         training_params = training_params or {}
-<<<<<<< HEAD
-         
-=======
 
         if self.calibrated_params:
             calib_disc = self.calibrated_params.get("discriminator_params", {})
@@ -128,7 +125,6 @@ class AdversarialEstimator:
             f"training_params={training_params}"
         )
 
->>>>>>> ed50ec1a498133be56959e3b7ad5e61d0dd26dca
         def objective_with_generator(theta):
             seeds =[21,42]
             return objective_function(
