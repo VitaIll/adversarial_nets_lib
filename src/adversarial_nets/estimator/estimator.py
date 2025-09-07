@@ -60,12 +60,12 @@ class AdversarialEstimator:
         self.metric = metric
         self.calibrated_params = None
         self.calibration_study = None
-        
+
     def estimate(
             self,
-            m,
-            num_epochs=20,
-            k_hops=1,
+            m=None,
+            num_epochs=None,
+            k_hops=None,
             verbose=True,
             discriminator_params=None,
             training_params=None,
@@ -74,14 +74,18 @@ class AdversarialEstimator:
 
         Parameters
         ----------
-        m : int
-            Number of nodes to sample for subgraphs.
+        m : int, optional
+            Number of nodes to sample for subgraphs. If ``None`` and
+            calibration has been performed, the calibrated value is used.
         num_epochs : int, optional
-            Number of epochs to train the discriminator.
+            Number of epochs to train the discriminator. Falls back to the
+            calibrated value or ``20`` if unspecified.
         k_hops : int, optional
-            Radius of the ego network sampled around each target node.
+            Radius of the ego network sampled around each target node. Falls
+            back to the calibrated value or ``1`` if unspecified.
         verbose : bool, optional
-            Whether to print progress information.
+            Whether to print progress information during discriminator
+            training.
         discriminator_params : dict, optional
             Additional keyword arguments forwarded to ``discriminator_factory``.
         training_params : dict, optional
@@ -89,7 +93,37 @@ class AdversarialEstimator:
             control the training routine (e.g. ``batch_size`` or ``lr``).
         """
 
+        discriminator_params = discriminator_params or {}
         training_params = training_params or {}
+
+        if self.calibrated_params:
+            calib_disc = self.calibrated_params.get("discriminator_params", {})
+            calib_train = self.calibrated_params.get("training_params", {})
+        else:
+            calib_disc, calib_train = {}, {}
+
+        # Use calibrated values for top-level parameters if not provided
+        if m is None:
+            m = calib_train.pop("m", None)
+        if num_epochs is None:
+            num_epochs = calib_train.pop("num_epochs", 20)
+        if k_hops is None:
+            k_hops = calib_train.pop("k_hops", 1)
+
+        if m is None:
+            raise ValueError(
+                "Parameter m must be specified either directly or via calibrated params."
+            )
+
+        discriminator_params = {**calib_disc, **discriminator_params}
+        training_params = {**calib_train, **training_params}
+
+        print(
+            "Starting estimation with parameters:\n"
+            f"m={m}, num_epochs={num_epochs}, k_hops={k_hops}\n"
+            f"discriminator_params={discriminator_params}\n"
+            f"training_params={training_params}"
+        )
 
         def objective_with_generator(theta):
             return objective_function(
@@ -115,14 +149,23 @@ class AdversarialEstimator:
             'n_jobs': -1,
             'verbose': verbose,
         }
-        
+
         gp_options.update(self.gp_params)
+
+        total_calls = gp_options.get('n_calls', 0)
+        pbar = tqdm(total=total_calls, desc="Estimating")
+
+        def _callback(res):
+            pbar.update(1)
 
         result = gp_minimize(
             objective_with_generator,
             self.bounds,
+            callback=[_callback],
             **gp_options
         )
+
+        pbar.close()
 
         return result
 
@@ -201,7 +244,14 @@ class AdversarialEstimator:
         study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
         pbar.close()
 
-        self.calibrated_params = study.best_params
+        best_params = study.best_params
+        disc_keys = search_space.get("discriminator_params", {}).keys()
+        train_keys = search_space.get("training_params", {}).keys()
+
+        self.calibrated_params = {
+            "discriminator_params": {k: best_params[k] for k in disc_keys if k in best_params},
+            "training_params": {k: best_params[k] for k in train_keys if k in best_params},
+        }
         self.calibration_study = study
 
         return None
