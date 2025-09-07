@@ -90,8 +90,9 @@ class AdversarialEstimator:
         """
 
         training_params = training_params or {}
-
+         
         def objective_with_generator(theta):
+            seeds =[21,42]
             return objective_function(
                 theta,
                 self.ground_truth_generator,
@@ -104,6 +105,7 @@ class AdversarialEstimator:
                 verbose=verbose,
                 metric=self.metric,
                 **training_params,
+                seeds=seeds
             )
         
         gp_options = {
@@ -168,6 +170,7 @@ class AdversarialEstimator:
         pbar = tqdm(total=n_trials * k, desc="Calibrating")
 
         def objective(trial):
+            seeds =[21,42]
             disc_search = search_space.get("discriminator_params", {})
             train_search = search_space.get("training_params", {})
 
@@ -193,6 +196,7 @@ class AdversarialEstimator:
                     metric=metric_name,
                     discriminator_params=disc_params,
                     **train_params,
+                    seeds=seeds
                 )
                 performances.append(perf)
                 pbar.update(1)

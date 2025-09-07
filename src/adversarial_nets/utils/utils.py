@@ -118,6 +118,7 @@ def objective_function(
     batch_size=256,
     lr=0.01,
     discriminator_params=None,
+    seeds=[1,2]
 ):
     """
     Objective function for parameter estimation.
@@ -167,10 +168,16 @@ def objective_function(
     synthetic_generator.generate_outcomes(theta)
 
     n = ground_truth_generator.num_nodes
-    sampled_nodes = random.sample(range(n), min(m, n))
+    k = min(m, n)
 
-    real_subgraphs = ground_truth_generator.sample_subgraphs(sampled_nodes, k_hops=k_hops)
-    synthetic_subgraphs = synthetic_generator.sample_subgraphs(sampled_nodes, k_hops=k_hops)
+    rng_real   = random.Random(seeds[0])
+    rng_synth  = random.Random(seeds[1])
+
+    real_nodes = rng_real.sample(range(n), k)
+    real_subgraphs = ground_truth_generator.sample_subgraphs(real_nodes, k_hops=k_hops)
+
+    synthetic_nodes = rng_synth.sample(range(n), k)
+    synthetic_subgraphs = synthetic_generator.sample_subgraphs(synthetic_nodes, k_hops=k_hops)
 
     dataset = create_dataset(real_subgraphs, synthetic_subgraphs)
 
