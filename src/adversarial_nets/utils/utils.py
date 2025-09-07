@@ -118,7 +118,7 @@ def objective_function(
     batch_size=256,
     lr=0.01,
     discriminator_params=None,
-    seeds=[1,2]
+    seeds=None
 ):
     """
     Objective function for parameter estimation.
@@ -156,6 +156,10 @@ def objective_function(
         Learning rate for the optimizer.
     discriminator_params : dict, optional
         Additional keyword arguments forwarded to ``discriminator_factory``.
+    seeds : sequence of int, optional
+        Optional seeds ``(real, synthetic, training)``. If ``None`` (default),
+        fresh seeds are drawn for each call ensuring different subsamples and
+        discriminator initialization.
 
     Returns:
     --------
@@ -168,16 +172,29 @@ def objective_function(
     synthetic_generator.generate_outcomes(theta)
 
     n = ground_truth_generator.num_nodes
-    k = min(m, n)
+    # ensure we can draw disjoint samples for real and synthetic data
+    k = min(m, n // 2)
 
-    rng_real   = random.Random(seeds[0])
-    rng_synth  = random.Random(seeds[1])
+    sys_rng = random.SystemRandom()
+    if seeds is None:
+        seeds = [sys_rng.randrange(2**32) for _ in range(3)]
+    elif len(seeds) < 3:
+        seeds = list(seeds) + [sys_rng.randrange(2**32) for _ in range(3 - len(seeds))]
 
+    rng_real = random.Random(seeds[0])
+    rng_synth = random.Random(seeds[1])
+
+    # Sample disjoint node sets
     real_nodes = rng_real.sample(range(n), k)
-    real_subgraphs = ground_truth_generator.sample_subgraphs(real_nodes, k_hops=k_hops)
+    remaining_nodes = list(set(range(n)) - set(real_nodes))
+    synthetic_nodes = rng_synth.sample(remaining_nodes, k)
 
-    synthetic_nodes = rng_synth.sample(range(n), k)
+    real_subgraphs = ground_truth_generator.sample_subgraphs(real_nodes, k_hops=k_hops)
     synthetic_subgraphs = synthetic_generator.sample_subgraphs(synthetic_nodes, k_hops=k_hops)
+
+    train_seed = seeds[2]
+    torch.manual_seed(train_seed)
+    np.random.seed(train_seed)
 
     dataset = create_dataset(real_subgraphs, synthetic_subgraphs)
 
