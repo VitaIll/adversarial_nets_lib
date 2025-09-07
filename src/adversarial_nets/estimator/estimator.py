@@ -136,6 +136,7 @@ class AdversarialEstimator:
             num_epochs=5,
             k_hops=1,
             discriminator_verbose=False,
+            direction="minimize",
         ):
         """Calibrate discriminator hyperparameters using Optuna.
 
@@ -149,7 +150,7 @@ class AdversarialEstimator:
             Parameters for :func:`optuna.create_study`. May include
             ``n_trials`` to specify the number of optimization trials.
         metric_name : str
-            Calibration metric to minimize (passed to
+            Calibration metric to optimize (passed to
             :func:`evaluate_discriminator`).
         k : int, optional
             Number of randomly drawn ``theta`` values per trial.
@@ -158,10 +159,12 @@ class AdversarialEstimator:
             training. They can be overridden by sampled training parameters.
         discriminator_verbose : bool, optional
             Whether to print discriminator training progress.
+        direction : {"minimize", "maximize"}, optional
+            Direction of optimization passed to :func:`optuna.create_study`.
         """
 
         n_trials = optimizer_params.pop("n_trials", 50)
-        study = optuna.create_study(direction="minimize", **optimizer_params)
+        study = optuna.create_study(direction=direction, **optimizer_params)
         pbar = tqdm(total=n_trials * k, desc="Calibrating")
 
         def objective(trial):
