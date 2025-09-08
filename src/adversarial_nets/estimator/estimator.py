@@ -94,7 +94,8 @@ class AdversarialEstimator:
             Additional keyword arguments forwarded to ``discriminator_factory``.
         training_params : dict, optional
             Keyword arguments forwarded to :func:`objective_function` to
-            control the training routine (e.g. ``batch_size`` or ``lr``).
+            control the training routine (e.g. ``batch_size``, ``lr``,
+            ``weight_decay`` or ``label_smoothing``).
         """
 
         discriminator_params = discriminator_params or {}
@@ -199,7 +200,9 @@ class AdversarialEstimator:
         search_space : dict
             Dictionary defining Optuna search space. Expected keys
             ``"discriminator_params"`` and ``"training_params"`` each mapping
-            parameter names to callables ``lambda trial: ...``.
+            parameter names to callables ``lambda trial: ...``. Training
+            parameters can include values such as ``lr``, ``batch_size``,
+            ``weight_decay`` or ``label_smoothing``.
         optimizer_params : dict
             Parameters for :func:`optuna.create_study`. May include
             ``n_trials`` to specify the number of optimization trials.

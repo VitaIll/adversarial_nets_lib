@@ -117,6 +117,8 @@ def objective_function(
     metric="neg_logloss",
     batch_size=256,
     lr=0.01,
+    weight_decay=0.0,
+    label_smoothing=0.0,
     discriminator_params=None,
     seeds=None,
     num_runs=1,
@@ -155,6 +157,10 @@ def objective_function(
         Batch size used by the ``DataLoader``.
     lr : float, optional
         Learning rate for the optimizer.
+    weight_decay : float, optional
+        Weight decay to apply in the optimizer.
+    label_smoothing : float, optional
+        Label smoothing factor used in the loss function.
     discriminator_params : dict, optional
         Additional keyword arguments forwarded to ``discriminator_factory``.
     seeds : sequence of int, optional
@@ -215,8 +221,10 @@ def objective_function(
         disc_params = discriminator_params or {}
         model = discriminator_factory(input_dim, **disc_params).to(device)
 
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-        criterion = nn.CrossEntropyLoss()
+        optimizer = torch.optim.AdamW(
+            model.parameters(), lr=lr, weight_decay=weight_decay
+        )
+        criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
 
         model.train()
         for epoch in range(num_epochs):
