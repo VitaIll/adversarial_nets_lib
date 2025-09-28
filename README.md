@@ -66,7 +66,7 @@ At the optimal discriminator this minimizes the Jensen–Shannon divergence betw
 
   * *Ground-truth generator*: sampling manager over \$G\$ to produce \$g\sim p\_{\mathrm{data}}^{\mathsf{S}}\$.
   * *Synthetic generator*: wraps \$m\_\theta\$, reuses \$X\$, \$A\$ and the chosen initial state \$Y^{(0)}\$ (passed through the estimator), constructs \$P(A)\$ with zero diagonal, and exposes `generate_outcomes(θ)` for counterfactual simulation.
-* **Optimization.** Treat the outer problem as black-box in \$\theta\$. Bayesian optimization is a reasonable default; use **binary cross-entropy** from the objective above (not accuracy) as the scalar loss.
+* **Optimization.** Treat the outer problem as black-box in \$\theta\$. Bayesian optimization is a reasonable default; use **binary cross-entropy** from the objective above (not accuracy) as the scalar loss. The estimator exposes an ``outer_optimizer`` switch: keep ``"gp"`` (default, via ``skopt.gp_minimize``) or set ``"nelder-mead"`` to activate SciPy's derivative-free simplex routine. Additional optimizer arguments can be supplied through ``outer_optimizer_params`` (legacy code using ``gp_params`` continues to work when the GP optimizer is selected). SciPy is declared as a project dependency.
 
 ## `linear_in_means_model.ipynb`
 
