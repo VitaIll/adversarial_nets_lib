@@ -122,6 +122,7 @@ def objective_function(
     discriminator_params=None,
     seeds=None,
     num_runs=1,
+    training_verbose=None,
 ):
     """
     Objective function for parameter estimation.
@@ -148,7 +149,10 @@ def objective_function(
     k_hops : int, optional
         Radius of the ego network sampled around each target node.
     verbose : bool
-        Whether to print progress information
+        Whether to print summary information after each training run.
+    training_verbose : bool, optional
+        Whether to print discriminator training progress for each epoch. If
+        ``None`` (default) this mirrors the value of ``verbose``.
     metric : str
         Evaluation metric passed to ``evaluate_discriminator``. Supported
         values are ``"neg_logloss"``, ``"accuracy"`` and
@@ -179,6 +183,9 @@ def objective_function(
     """
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    if training_verbose is None:
+        training_verbose = verbose
 
     sys_rng = random.SystemRandom()
     if seeds is not None:
@@ -237,7 +244,7 @@ def objective_function(
                 loss.backward()
                 optimizer.step()
                 total_loss += loss.item()
-            if verbose:
+            if training_verbose:
                 print(f"Epoch {epoch}, Loss: {total_loss/len(train_loader):.4f}")
 
         return evaluate_discriminator(model, test_loader, device, metric)
