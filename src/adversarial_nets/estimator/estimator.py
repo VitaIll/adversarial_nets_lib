@@ -113,6 +113,7 @@ class AdversarialEstimator:
             k_hops=None,
             num_runs=1,
             verbose=True,
+            show_progress=True,
             discriminator_params=None,
             training_params=None,
         ):
@@ -133,14 +134,16 @@ class AdversarialEstimator:
             Number of independent training/evaluation repetitions per
             objective evaluation. Results are averaged across runs.
         verbose : bool, optional
-            Whether to print progress information during discriminator
-            training.
+            Whether to print summary information for each optimization step.
+        show_progress : bool, optional
+            Whether to display a progress bar for the outer optimization.
         discriminator_params : dict, optional
             Additional keyword arguments forwarded to ``discriminator_factory``.
         training_params : dict, optional
             Keyword arguments forwarded to :func:`objective_function` to
             control the training routine (e.g. ``batch_size``, ``lr``,
-            ``weight_decay`` or ``label_smoothing``).
+            ``weight_decay`` or ``label_smoothing``). Use
+            ``training_verbose`` to re-enable per-epoch discriminator logs.
         """
 
         discriminator_params = discriminator_params or {}
@@ -171,12 +174,17 @@ class AdversarialEstimator:
         if num_runs is None:
             num_runs = 1
 
-        print(
-            "Starting estimation with parameters:\n"
-            f"m={m}, num_epochs={num_epochs}, k_hops={k_hops}, num_runs={num_runs}\n"
-            f"discriminator_params={discriminator_params}\n"
-            f"training_params={training_params}"
-        )
+        if verbose:
+            print(
+                "Starting estimation with parameters:\n"
+                f"m={m}, num_epochs={num_epochs}, k_hops={k_hops}, num_runs={num_runs}\n"
+                f"discriminator_params={discriminator_params}\n"
+                f"training_params={training_params}"
+            )
+
+        training_verbose = training_params.pop("training_verbose", None)
+        if training_verbose is None:
+            training_verbose = False
 
         def objective_with_generator(theta):
             return objective_function(
@@ -191,9 +199,10 @@ class AdversarialEstimator:
                 verbose=verbose,
                 metric=self.metric,
                 num_runs=num_runs,
+                training_verbose=training_verbose,
                 **training_params
             )
-        
+
         if self.outer_optimizer == "gp":
             gp_options = {
                 "n_calls": 150,
@@ -208,7 +217,11 @@ class AdversarialEstimator:
             gp_options.update(dict(self.outer_optimizer_params))
 
             total_calls = gp_options.get("n_calls", 0)
-            pbar = tqdm(total=total_calls, desc="Estimating") if verbose else None
+            pbar = tqdm(
+                total=total_calls if total_calls else None,
+                desc="Estimating",
+                disable=not show_progress,
+            )
 
             def _callback(res):
                 if pbar is not None:
@@ -262,7 +275,11 @@ class AdversarialEstimator:
             default_options["disp"] = bool(default_options["disp"])
 
             estimated_total = default_options.get("maxiter") or default_options.get("maxfev")
-            pbar = tqdm(total=estimated_total, desc="Estimating") if verbose else None
+            pbar = tqdm(
+                total=estimated_total,
+                desc="Estimating",
+                disable=not show_progress,
+            )
 
             user_callback = nm_params.pop("callback", None)
             user_tol = nm_params.pop("tol", None)
