@@ -52,10 +52,12 @@ def evaluate_discriminator(model, loader, device, metric="neg_logloss"):
     -------
     float
         Evaluation value according to ``metric``. For ``"accuracy"`` the value
-        is the standard accuracy score. For the other options the value is
-        defined so that lower values correspond to better discriminator
-        performance; hence they can be directly minimized by the outer
-        optimization routine.
+        is the standard accuracy score. For the other options the value keeps
+        the adversarial convention used by the estimator: the returned metric is
+        negated so that *more negative* values correspond to a less accurate
+        discriminator. This allows the outer optimization routine, which
+        minimizes the reported quantity, to seek parameters that lead to the
+        worst discriminator performance when using cross-entropy-based losses.
     """
 
     from sklearn.metrics import accuracy_score, brier_score_loss, log_loss
@@ -168,9 +170,10 @@ def objective_function(
     discriminator_params : dict, optional
         Additional keyword arguments forwarded to ``discriminator_factory``.
     seeds : sequence of int, optional
-        Optional seeds ``(real, synthetic, training)``. If ``None`` (default),
-        fresh seeds are drawn for each call ensuring different subsamples and
-        discriminator initialization.
+        Optional seeds ``(sampling, reserved, training)``. If ``None``
+        (default), fresh seeds are drawn for each call ensuring different
+        subsamples and discriminator initialization. The second entry is kept
+        for backwards compatibility and is currently unused.
     num_runs : int, optional
         Number of independent training/evaluation repetitions using fresh
         samples. The final objective is the average over these runs.
@@ -195,22 +198,21 @@ def objective_function(
         synthetic_generator.generate_outcomes(theta)
 
         n = ground_truth_generator.num_nodes
-        # ensure we can draw disjoint samples for real and synthetic data
-        k = min(m, n // 2)
+        if m > n:
+            raise ValueError(
+                f"Requested {m} subgraphs but only {n} nodes are available."
+            )
+        k = min(m, n)
 
         if run_seeds is None:
             run_seeds = [sys_rng.randrange(2**32) for _ in range(3)]
 
-        rng_real = random.Random(run_seeds[0])
-        rng_synth = random.Random(run_seeds[1])
+        node_rng = random.Random(run_seeds[0])
 
-        # Sample disjoint node sets
-        real_nodes = rng_real.sample(range(n), k)
-        remaining_nodes = list(set(range(n)) - set(real_nodes))
-        synthetic_nodes = rng_synth.sample(remaining_nodes, k)
+        sampled_nodes = node_rng.sample(range(n), k)
 
-        real_subgraphs = ground_truth_generator.sample_subgraphs(real_nodes, k_hops=k_hops)
-        synthetic_subgraphs = synthetic_generator.sample_subgraphs(synthetic_nodes, k_hops=k_hops)
+        real_subgraphs = ground_truth_generator.sample_subgraphs(sampled_nodes, k_hops=k_hops)
+        synthetic_subgraphs = synthetic_generator.sample_subgraphs(sampled_nodes, k_hops=k_hops)
 
         train_seed = run_seeds[2]
         torch.manual_seed(train_seed)
